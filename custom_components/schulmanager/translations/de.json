@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Schulmanager einrichten",
+        "description": "Für den einfachen Betrieb starte zuerst das lokale Add-on 'Schulmanager Bridge'. Standardmäßig wird die IP deines Home-Assistant-Hosts mit Port 8099 vorgeschlagen. Bei Bedarf kannst du den Wert manuell ändern. Optional kannst du ein gemeinsames Bridge-Secret setzen; dann müssen Add-on und Integration denselben Wert verwenden.",
+        "data": {
+          "username": "E-Mail / Benutzername",
+          "password": "Passwort",
+          "bridge_url": "Bridge-URL",
+          "bridge_secret": "Bridge-Secret",
+          "scan_interval": "Aktualisierungsintervall in Minuten",
+          "modules": "Module"
+        }
+      },
+      "reconfigure": {
+        "title": "Schulmanager neu konfigurieren",
+        "data": {
+          "username": "E-Mail / Benutzername",
+          "password": "Passwort",
+          "bridge_url": "Bridge-URL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Verbindung zur Schulmanager-Bridge oder zum Portal fehlgeschlagen.",
+      "invalid_auth": "Anmeldung fehlgeschlagen.",
+      "unknown": "Unerwarteter Fehler. Siehe Home-Assistant-Log."
+    },
+    "abort": {
+      "already_configured": "Dieses Konto ist bereits eingerichtet.",
+      "reconfigure_successful": "Konfiguration aktualisiert."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Schulmanager Optionen",
+        "data": {
+          "modules": "Aktive Module",
+          "scan_interval": "Aktualisierungsintervall in Minuten",
+          "bridge_url": "Bridge-URL",
+          "bridge_secret": "Bridge-Secret"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "account": {
+        "name": "Konto"
+      },
+      "schedules": {
+        "name": "Stundenplan heute"
+      },
+      "schedules_week": {
+        "name": "Stundenplan Woche"
+      },
+      "homework": {
+        "name": "Hausaufgaben"
+      },
+      "calendar": {
+        "name": "Kalender"
+      },
+      "exams": {
+        "name": "Klausuren"
+      },
+      "meal": {
+        "name": "Speiseplan heute"
+      },
+      "activities": {
+        "name": "AGs"
+      }
+    },
+    "binary_sensor": {
+      "stale_data": {
+        "name": "Daten veraltet"
+      },
+      "module_errors": {
+        "name": "Modulfehler"
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Aktualisieren",
+      "description": "Schulmanager-Daten sofort aktualisieren.",
+      "fields": {
+        "entry_id": {
+          "name": "Eintrags-ID",
+          "description": "Optionale Config-Entry-ID. Leer bedeutet: alle Schulmanager-Einträge aktualisieren."
+        }
+      }
+    }
+  }
+}

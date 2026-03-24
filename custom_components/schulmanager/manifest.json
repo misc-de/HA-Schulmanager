@@ -1,0 +1,12 @@
+{
+  "domain": "schulmanager",
+  "name": "Schulmanager",
+  "codeowners": [
+    "@openai"
+  ],
+  "config_flow": true,
+  "documentation": "https://github.com/SchmueI/Schulmanager-API",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "version": "0.3.18"
+}

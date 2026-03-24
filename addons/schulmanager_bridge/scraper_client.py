@@ -1,0 +1,873 @@
+"""Schulmanager scraper client for the add-on bridge."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date, datetime
+import logging
+import re
+import time
+from typing import Any
+
+from selenium import webdriver
+from selenium.common.exceptions import TimeoutException, WebDriverException
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.common.keys import Keys
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.remote.webdriver import WebDriver
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+WEEKDAY_NAMES = [
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+]
+
+_LOGGER = logging.getLogger(__name__)
+
+LOGIN_URL = "https://login.schulmanager-online.de/#/login"
+DASHBOARD_URL = "https://login.schulmanager-online.de/#/dashboard"
+ACCOUNT_URL = "https://login.schulmanager-online.de/#/account"
+HOMEWORK_URL = "https://login.schulmanager-online.de/#/modules/classbook/homework/"
+CALENDAR_URL = "https://login.schulmanager-online.de/#/modules/calendar/overview"
+SCHEDULE_URL = "https://login.schulmanager-online.de/#/modules/schedules/view//"
+
+
+class SchulmanagerError(Exception):
+    """Base exception for the integration."""
+
+
+class SchulmanagerAuthError(SchulmanagerError):
+    """Raised when authentication fails."""
+
+
+class SchulmanagerConnectionError(SchulmanagerError):
+    """Raised when the webdriver or page loading fails."""
+
+
+@dataclass(slots=True)
+class LoginInfo:
+    """Minimal account information used during setup."""
+
+    unique_id: str
+    title: str
+    account: dict[str, Any]
+
+
+class SchulmanagerClient:
+    """Client for scraping Schulmanager with a local Chromium driver."""
+
+    def __init__(self, username: str, password: str) -> None:
+        self._username = username
+        self._password = password
+
+    def validate_login(self) -> LoginInfo:
+        """Validate credentials and return title information for HA setup."""
+        _LOGGER.info("Starting login validation for %s", self._username)
+        started = time.perf_counter()
+        driver = self._build_driver()
+        try:
+            self._login(driver)
+            try:
+                account = self._get_account(driver)
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception("Account parsing failed after successful login; using fallback account info")
+                account = {
+                    "full_name": self._username,
+                    "first_name": "",
+                    "surname": "",
+                    "class_year": "",
+                    "branch": "",
+                    "raw": f"fallback_after_parse_error: {type(err).__name__}: {err}",
+                }
+        finally:
+            self._close_driver(driver)
+
+        full_name = account.get("full_name") or self._username
+        unique_id = self._username.lower()
+        _LOGGER.info("Login validation finished for %s in %.1f ms", unique_id, (time.perf_counter() - started) * 1000)
+        return LoginInfo(unique_id=unique_id, title=f"Schulmanager ({full_name})", account=account)
+
+    def _safe_collect_module(self, data: dict[str, Any], module: str, collector, *args) -> dict[str, Any]:
+        try:
+            return collector(*args)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.exception("Module '%s' failed", module)
+            return self._module_error_result(data, module, err)
+
+    def _module_error_result(self, data: dict[str, Any], module: str, err: Exception) -> dict[str, Any]:
+        data.setdefault("meta", {}).setdefault("module_errors", {})[module] = f"{type(err).__name__}: {err}"
+        if module == "account":
+            return {
+                "full_name": self._username,
+                "first_name": "",
+                "surname": "",
+                "class_year": "",
+                "branch": "",
+                "raw": f"module_error: {type(err).__name__}: {err}",
+                "error": f"{type(err).__name__}: {err}",
+            }
+        if module == "schedules":
+            return {
+                "week": {},
+                "today_name": WEEKDAY_NAMES[date.today().weekday()],
+                "today": [],
+                "error": f"{type(err).__name__}: {err}",
+            }
+        return {
+            "items": [],
+            "today": [],
+            "error": f"{type(err).__name__}: {err}",
+        }
+
+    def fetch_data(self, modules: list[str], debug: bool = False) -> dict[str, Any]:
+        """Fetch all selected modules in one browser session.
+
+        A single parser failure must not break the whole Home Assistant entry.
+        """
+        _LOGGER.info("Starting data fetch for %s with modules=%s", self._username, ", ".join(modules))
+        started = time.perf_counter()
+        driver = self._build_driver()
+        try:
+            self._login(driver)
+            data: dict[str, Any] = {
+                "meta": {
+                    "fetched_at": datetime.utcnow().isoformat() + "Z",
+                    "modules": modules,
+                    "module_errors": {},
+                }
+            }
+
+            if "account" in modules:
+                data["account"] = self._safe_collect_module(data, "account", self._get_account, driver)
+
+            dashboard_required = any(
+                module in modules for module in ("activities", "exams", "meal")
+            )
+            dashboard_html = ""
+            if dashboard_required:
+                try:
+                    self._load_dashboard(driver)
+                    dashboard_html = driver.page_source
+                except Exception as err:  # noqa: BLE001
+                    _LOGGER.exception("Dashboard load failed")
+                    for module in ("activities", "exams", "meal"):
+                        if module in modules:
+                            data[module] = self._module_error_result(data, module, err)
+
+            if "activities" in modules and "activities" not in data:
+                data["activities"] = self._safe_collect_module(data, "activities", self._collect_activities, dashboard_html)
+            if "exams" in modules and "exams" not in data:
+                data["exams"] = self._safe_collect_module(data, "exams", self._collect_exams, dashboard_html)
+            if "meal" in modules and "meal" not in data:
+                data["meal"] = self._safe_collect_module(data, "meal", self._collect_meal, dashboard_html, driver if debug else None)
+
+            if "schedules" in modules:
+                data["schedules"] = self._safe_collect_module(data, "schedules", self._collect_schedules, driver, "", debug)
+            if "homework" in modules:
+                data["homework"] = self._safe_collect_module(data, "homework", self._collect_homework, driver, debug)
+            if "calendar" in modules:
+                data["calendar"] = self._safe_collect_module(data, "calendar", self._collect_calendar, driver, debug)
+
+            _LOGGER.info("Finished data fetch for %s in %.1f ms", self._username, (time.perf_counter() - started) * 1000)
+            return data
+        finally:
+            self._close_driver(driver)
+
+    def _build_driver(self) -> WebDriver:
+        _LOGGER.debug("Creating local Chromium webdriver")
+        options = Options()
+        options.binary_location = self._detect_chromium_binary()
+        options.add_argument("--headless=new")
+        options.add_argument("--window-size=1920,1080")
+        options.add_argument("--disable-dev-shm-usage")
+        options.add_argument("--no-sandbox")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--disable-software-rasterizer")
+        options.add_argument(
+            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.18 (+addon bridge)"
+        )
+
+        try:
+            driver = webdriver.Chrome(
+                service=Service(self._detect_chromedriver_binary()),
+                options=options,
+            )
+            _LOGGER.debug("Local Chromium webdriver created successfully")
+            return driver
+        except WebDriverException as err:
+            _LOGGER.exception("Could not start local Chromium webdriver")
+            raise SchulmanagerConnectionError(
+                f"Local Chromium WebDriver could not be started: {err}"
+            ) from err
+
+    @staticmethod
+    def _detect_chromium_binary() -> str:
+        candidates = [
+            "/usr/bin/chromium",
+            "/usr/bin/chromium-browser",
+            "/usr/bin/google-chrome",
+        ]
+        for candidate in candidates:
+            try:
+                with open(candidate, "rb"):
+                    return candidate
+            except OSError:
+                continue
+        raise SchulmanagerConnectionError("No Chromium/Chrome binary found in bridge container.")
+
+    @staticmethod
+    def _detect_chromedriver_binary() -> str:
+        candidates = [
+            "/usr/bin/chromedriver",
+            "/usr/lib/chromium/chromedriver",
+        ]
+        for candidate in candidates:
+            try:
+                with open(candidate, "rb"):
+                    return candidate
+            except OSError:
+                continue
+        raise SchulmanagerConnectionError("No chromedriver binary found in bridge container.")
+
+    def _close_driver(self, driver: WebDriver) -> None:
+        try:
+            driver.quit()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Driver quit failed", exc_info=True)
+
+    def _login(self, driver: WebDriver) -> None:
+        _LOGGER.debug("Opening Schulmanager login page")
+        driver.get(LOGIN_URL)
+
+        try:
+            WebDriverWait(driver, 7).until(
+                EC.presence_of_element_located((By.TAG_NAME, "widgets-container"))
+            )
+            _LOGGER.debug("Existing Schulmanager session is already active")
+            return
+        except TimeoutException:
+            pass
+
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.ID, "emailOrUsername"))
+            )
+        except TimeoutException as err:
+            raise SchulmanagerConnectionError(
+                "Login form could not be loaded."
+            ) from err
+
+        _LOGGER.debug("Submitting Schulmanager credentials")
+        driver.find_element(By.ID, "emailOrUsername").clear()
+        driver.find_element(By.ID, "emailOrUsername").send_keys(self._username)
+        driver.find_element(By.ID, "password").clear()
+        driver.find_element(By.ID, "password").send_keys(self._password + Keys.RETURN)
+
+        try:
+            WebDriverWait(driver, 20).until(
+                EC.presence_of_element_located((By.ID, "accountDropdown"))
+            )
+            _LOGGER.debug("Schulmanager login succeeded")
+        except TimeoutException as err:
+            page_excerpt = self._strip_tags(driver.page_source)[:500]
+            _LOGGER.warning(
+                "Schulmanager login did not reach the account menu in time; current_url=%s excerpt=%s",
+                driver.current_url,
+                page_excerpt,
+            )
+            raise SchulmanagerAuthError("Authentication failed.") from err
+
+    def _load_dashboard(self, driver: WebDriver) -> None:
+        _LOGGER.debug("Opening Schulmanager dashboard")
+        driver.get(DASHBOARD_URL)
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.TAG_NAME, "widgets-container"))
+            )
+        except TimeoutException as err:
+            raise SchulmanagerConnectionError("Dashboard could not be loaded.") from err
+
+    def _get_account(self, driver: WebDriver) -> dict[str, Any]:
+        _LOGGER.debug("Opening Schulmanager account page")
+        driver.get(ACCOUNT_URL)
+        try:
+            WebDriverWait(driver, 10).until(
+                EC.any_of(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, ".widget-tile")),
+                    EC.presence_of_element_located((By.ID, "accountDropdown")),
+                )
+            )
+        except TimeoutException as err:
+            raise SchulmanagerConnectionError("Account page could not be loaded.") from err
+
+        html = driver.page_source
+        if "Angemeldet" not in html:
+            time.sleep(2)
+            html = driver.page_source
+
+        if "Angemeldet" not in html:
+            _LOGGER.warning(
+                "Account details are not available; using username fallback. current_url=%s excerpt=%s",
+                driver.current_url,
+                self._strip_tags(html)[:300],
+            )
+            return {
+                "full_name": self._username,
+                "first_name": "",
+                "surname": "",
+                "class_year": "",
+                "branch": "",
+                "raw": "fallback_no_account_details",
+                "error": "Account details are not available.",
+            }
+
+        try:
+            details = html.split("Angemeldet", 1)[1]
+            details = details.split("<br ", 1)[1].split(">", 1)[1]
+            details = details.split("</div", 1)[0]
+            details = details.replace("\n", "")
+            while details.startswith(" "):
+                details = details[1:]
+
+            surname = details.split(",", 1)[0].strip()
+            first_name = details.split(", ", 1)[1].split(" (", 1)[0].strip()
+            class_year = ""
+            branch = ""
+            if "(" in details and ")" in details:
+                class_data = details.split("(", 1)[1].split(")", 1)[0].strip()
+                class_year = class_data[:2].strip()
+                branch = class_data[2:].strip()
+
+            account = {
+                "full_name": f"{first_name} {surname}".strip(),
+                "first_name": first_name,
+                "surname": surname,
+                "class_year": class_year,
+                "branch": branch,
+                "raw": details,
+            }
+            _LOGGER.debug("Parsed account data for %s", account["full_name"])
+            return account
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.warning(
+                "Account parser fallback used. current_url=%s excerpt=%s error=%s",
+                driver.current_url,
+                self._strip_tags(html)[:300],
+                err,
+            )
+            return {
+                "full_name": self._username,
+                "first_name": "",
+                "surname": "",
+                "class_year": "",
+                "branch": "",
+                "raw": f"fallback_parse_error: {type(err).__name__}: {err}",
+                "error": f"{type(err).__name__}: {err}",
+            }
+
+
+    def _page_debug(self, driver: WebDriver, html: str | None = None, note: str = "") -> dict[str, Any]:
+        if html is None:
+            html = driver.page_source
+        excerpt = self._strip_tags(html)[:1200]
+        lowered = html.lower()
+        return {
+            "note": note,
+            "current_url": driver.current_url,
+            "page_title": driver.title,
+            "html_excerpt": excerpt,
+            "markers": {
+                "contains_table": "<table" in lowered,
+                "contains_class_hour_calendar": "class-hour-calendar" in lowered,
+                "contains_speiseplan": "speiseplan" in lowered,
+                "contains_stundenplan": "stundenplan" in lowered,
+                "contains_hausaufgaben": "hausaufgaben" in lowered,
+                "contains_calendar": "calendar" in lowered or "kalender" in lowered,
+                "contains_widgets_container": "widgets-container" in lowered,
+            },
+        }
+
+    def _collect_calendar(self, driver: WebDriver, debug: bool = False) -> dict[str, Any]:
+        _LOGGER.debug("Collecting calendar data")
+        driver.get(CALENDAR_URL)
+        try:
+            WebDriverWait(driver, 8).until(
+                EC.any_of(
+                    EC.presence_of_element_located((By.TAG_NAME, "calendar")),
+                    EC.presence_of_element_located((By.TAG_NAME, "body")),
+                )
+            )
+        except TimeoutException as err:
+            _LOGGER.warning("Calendar page timeout. current_url=%s excerpt=%s", driver.current_url, self._strip_tags(driver.page_source)[:300])
+            if debug:
+                details = self._page_debug(driver, note="calendar_timeout")
+                raise SchulmanagerConnectionError(f"Calendar page could not be loaded. debug={details}") from err
+            raise SchulmanagerConnectionError("Calendar page could not be loaded.") from err
+
+        html = driver.page_source
+        if "data-date=\"" not in html and "fc-event" not in html:
+            _LOGGER.info("Calendar page loaded without expected event markers; returning empty result")
+            result = {"items": [], "today": []}
+            if debug:
+                result["debug"] = self._page_debug(driver, note="calendar_no_event_markers")
+            return result
+
+        entities = html.split('data-date="')
+        if len(entities) <= 2:
+            result = {"items": [], "today": []}
+            if debug:
+                result["debug"] = self._page_debug(driver, html, note="calendar_too_few_entities")
+            return result
+        del entities[0]
+        del entities[-1]
+
+        output: list[dict[str, str]] = []
+        for entity in entities:
+            if "<!--" not in entity:
+                continue
+            try:
+                event_date = entity.split('"', 1)[0]
+                event_time = "00:00"
+                if 'class="fc-event-time">' in entity:
+                    event_time = (
+                        entity.split('class="fc-event-time">', 1)[1]
+                        .split("<", 1)[0]
+                        .replace(" ", "")
+                        .replace("\n", "")
+                    )
+                title = entity.split('class="fc-event-title fc-sticky">', 1)[1]
+                title = title.split("<", 1)[0]
+                title = title.split("\n")[1][6:].strip()
+                output.append(
+                    {
+                        "date": event_date,
+                        "time": event_time,
+                        "title": self._strip_tags(title),
+                    }
+                )
+            except (IndexError, ValueError):
+                _LOGGER.debug("Could not parse calendar entry", exc_info=True)
+
+        today_str = date.today().isoformat()
+        result = {
+            "items": output,
+            "today": [item for item in output if item["date"] == today_str],
+        }
+        if debug:
+            result["debug"] = self._page_debug(driver, html, note="calendar_result")
+        _LOGGER.debug("Collected %s calendar entries", len(result["items"]))
+        return result
+
+    def _collect_homework(self, driver: WebDriver, debug: bool = False) -> dict[str, Any]:
+        _LOGGER.debug("Collecting homework data")
+        driver.get(HOMEWORK_URL)
+        try:
+            WebDriverWait(driver, 8).until(
+                EC.any_of(
+                    EC.visibility_of_element_located((By.CSS_SELECTOR, ".tile")),
+                    EC.presence_of_element_located((By.TAG_NAME, "body")),
+                )
+            )
+        except TimeoutException as err:
+            _LOGGER.warning("Homework page timeout. current_url=%s excerpt=%s", driver.current_url, self._strip_tags(driver.page_source)[:300])
+            if debug:
+                details = self._page_debug(driver, note="homework_timeout")
+                raise SchulmanagerConnectionError(f"Homework page could not be loaded. debug={details}") from err
+            raise SchulmanagerConnectionError("Homework page could not be loaded.") from err
+
+        if "Hausaufgaben" not in driver.page_source:
+            time.sleep(1)
+            if "Hausaufgaben" not in driver.page_source:
+                _LOGGER.info("Homework page loaded without expected homework content; returning empty result")
+                result = {"items": [], "today": []}
+                if debug:
+                    result["debug"] = self._page_debug(driver, note="homework_no_content")
+                return result
+
+        html = driver.page_source
+        blocks = html.split('tile">')
+        if blocks:
+            blocks.pop(0)
+        if blocks:
+            blocks.pop(len(blocks) - 1)
+
+        output: list[dict[str, Any]] = []
+        for block in blocks:
+            try:
+                raw_date = block.split(", ", 1)[1].split("\n", 1)[0]
+                lessons = block.split("<h4 ")
+                lessons.pop(0)
+                lesson_names = [
+                    lesson.split(">", 1)[1].split("<", 1)[0] for lesson in lessons
+                ]
+                tasks = block.split("<span ")
+                tasks.pop(0)
+                task_values = [task.split(">", 1)[1].split("<", 1)[0] for task in tasks]
+                iso_date = self._ddmmyyyy_to_iso(raw_date)
+                entries = [
+                    f"{lesson_names[idx]}: {task_values[idx]}"
+                    for idx in range(min(len(lesson_names), len(task_values)))
+                ]
+                output.append({"date": iso_date, "entries": entries})
+            except (IndexError, ValueError):
+                _LOGGER.debug("Could not parse homework block", exc_info=True)
+
+        today_str = date.today().isoformat()
+        result = {
+            "items": output,
+            "today": [item for item in output if item["date"] == today_str],
+        }
+        if debug:
+            result["debug"] = self._page_debug(driver, html, note="homework_result")
+        _LOGGER.debug("Collected %s homework entries", len(result["items"]))
+        return result
+
+    def _collect_exams(self, html: str) -> dict[str, Any]:
+        _LOGGER.debug("Collecting exam data from dashboard")
+        if "<table " not in html:
+            return {"items": [], "today": []}
+
+        text = html.split("<table ", 1)[1].split("</table>", 1)[0]
+        rows = text.split("<tr ")
+        if rows:
+            rows.pop(0)
+
+        output: list[dict[str, str]] = []
+        for row in rows:
+            try:
+                lesson = row.split("<strong ", 1)[1].split(">", 1)[1].split("<", 1)[0]
+                row_after_lesson = row.split(lesson, 1)[1]
+                raw_date = (
+                    row_after_lesson.split("<td ", 1)[1]
+                    .split(">", 1)[1]
+                    .split("\n")[1]
+                    .split("\n")[0]
+                    .split(", ", 1)[1]
+                    .split(",", 1)[0]
+                )
+                if str(date.today().year) not in raw_date:
+                    raw_date = raw_date + str(date.today().year)
+                begin = (
+                    row_after_lesson.split("<br", 1)[1]
+                    .split(">", 1)[1]
+                    .split("<", 1)[0]
+                    .replace(" ", "")
+                    .replace("\n", "")
+                )
+                end = " - " + row_after_lesson.split("- ", 1)[1].split("\n", 1)[0]
+                output.append(
+                    {
+                        "date": self._ddmmyyyy_to_iso(raw_date),
+                        "entry": f"{begin}{end} {lesson}",
+                    }
+                )
+            except (IndexError, ValueError):
+                _LOGGER.debug("Could not parse exam row", exc_info=True)
+
+        today_str = date.today().isoformat()
+        result = {
+            "items": output,
+            "today": [item for item in output if item["date"] == today_str],
+        }
+        _LOGGER.debug("Collected %s exam entries", len(result["items"]))
+        return result
+
+    def _collect_meal(self, html: str, driver: WebDriver | None = None) -> dict[str, Any]:
+        try:
+            tiles = html.split('<div class="tile-header">')
+        except Exception:  # noqa: BLE001
+            return {"items": [], "today": []}
+
+        plan = ""
+        for tile in tiles:
+            test_tile = tile.replace(" ", "")
+            if "<!---->\nSpeiseplan\n</div>" in test_tile:
+                plan = tile
+                break
+
+        if not plan:
+            result = {"items": [], "today": []}
+            if driver is not None:
+                result["debug"] = self._page_debug(driver, html, note="meal_tile_not_found")
+            return result
+
+        rows = plan.split("<u>")
+        if rows:
+            rows.pop(0)
+
+        output: list[dict[str, str]] = []
+        for row in rows:
+            try:
+                raw_date = row.split("</u>", 1)[0].split(", ", 1)[1]
+                meals = row.split("</u>", 1)[1].split("<strong")
+                menu_entries: list[str] = []
+                for meal in meals:
+                    if ":" not in meal:
+                        continue
+                    menu_name = meal.split(">", 1)[1].split(":", 1)[0] + ": "
+                    menu_text = meal.split(": </strong>", 1)[1].split("<", 1)[0]
+                    menu_entries.append(menu_name + menu_text)
+                if not menu_entries:
+                    continue
+                output.append(
+                    {
+                        "date": self._ddmmyyyy_to_iso(raw_date),
+                        "menu": "\n\n".join(menu_entries),
+                    }
+                )
+            except (IndexError, ValueError):
+                _LOGGER.debug("Could not parse meal row", exc_info=True)
+
+        today_str = date.today().isoformat()
+        result = {
+            "items": output,
+            "today": [item for item in output if item["date"] == today_str],
+        }
+        if driver is not None:
+            result["debug"] = self._page_debug(driver, html, note="meal_result")
+        return result
+
+    def _collect_activities(self, html: str) -> dict[str, Any]:
+        if "Kommende Termine" not in html:
+            return {"items": [], "today": []}
+
+        html = html.split("Kommende Termine", 1)[1]
+        html = html.split("</widgets-container>", 1)[0]
+        days = html.split("<strong ")
+
+        output: list[dict[str, Any]] = []
+        for day_block in days:
+            if "AG " not in day_block:
+                continue
+            try:
+                raw_date = day_block.split("\n")[1][-10:]
+                events = day_block.split("col-2")
+                events.pop(0)
+                entries: list[str] = []
+                for event in events:
+                    event_time = event.split("\n")[1][-5:]
+                    entity = event.split("\n")[6]
+                    if "AG " not in entity:
+                        continue
+                    entries.append(f"{event_time} {entity[13:]}")
+                output.append(
+                    {
+                        "date": self._ddmmyyyy_to_iso(raw_date),
+                        "entries": entries,
+                    }
+                )
+            except (IndexError, ValueError):
+                _LOGGER.debug("Could not parse activity block", exc_info=True)
+
+        today_str = date.today().isoformat()
+        return {
+            "items": output,
+            "today": [item for item in output if item["date"] == today_str],
+        }
+
+    def _collect_schedules(self, driver: WebDriver, start_date: str = "", debug: bool = False) -> dict[str, Any]:
+        driver.get(SCHEDULE_URL + start_date)
+        try:
+            WebDriverWait(driver, 15).until(
+                EC.any_of(
+                    EC.presence_of_element_located((By.TAG_NAME, "class-hour-calendar")),
+                    EC.presence_of_element_located((By.TAG_NAME, "table")),
+                )
+            )
+        except TimeoutException:
+            html = driver.page_source
+            _LOGGER.warning(
+                "Schedule page could not be loaded; returning empty schedule. current_url=%s excerpt=%s",
+                driver.current_url,
+                self._strip_tags(html)[:300],
+            )
+            today_name = WEEKDAY_NAMES[date.today().weekday()]
+            result = {
+                "week": {name: [] for name in WEEKDAY_NAMES},
+                "today_name": today_name,
+                "today": [],
+                "error": "Schedule page could not be loaded.",
+            }
+            if debug:
+                result["debug"] = self._page_debug(driver, html, note="schedule_timeout")
+            return result
+
+        html = driver.page_source
+        if "<table" not in html:
+            _LOGGER.warning(
+                "Schedule table missing; returning empty schedule. current_url=%s excerpt=%s",
+                driver.current_url,
+                self._strip_tags(html)[:300],
+            )
+            today_name = WEEKDAY_NAMES[date.today().weekday()]
+            result = {
+                "week": {name: [] for name in WEEKDAY_NAMES},
+                "today_name": today_name,
+                "today": [],
+                "error": "Schedule table is not available.",
+            }
+            if debug:
+                result["debug"] = self._page_debug(driver, html, note="schedule_table_missing")
+            return result
+
+        html = html.split("<table", 1)[1]
+        html = html.split("</table>", 1)[0]
+        rows = html.split("<tr>")
+        if len(rows) < 3:
+            today_name = WEEKDAY_NAMES[date.today().weekday()]
+            result = {
+                "week": {name: [] for name in WEEKDAY_NAMES},
+                "today_name": today_name,
+                "today": [],
+                "error": "Schedule table did not contain lesson rows.",
+            }
+            if debug:
+                result["debug"] = self._page_debug(driver, html, note="schedule_no_rows")
+            return result
+        del rows[0]
+        del rows[0]
+
+        weekdays: list[list[str]] = [[] for _ in range(7)]
+        for row in rows:
+            td = row.split("<td>")
+            for idx, column in enumerate(td):
+                if 1 <= idx <= 7:
+                    weekdays[idx - 1].append(column.split("</td>", 1)[0])
+
+        parsed_week: list[list[str]] = []
+        for day in weekdays:
+            parsed_day: list[str] = []
+            for entity in day:
+                if "span" not in entity:
+                    parsed_day.append("")
+                    continue
+                try:
+                    parsed_day.append(self._parse_schedule_cell(entity))
+                except Exception:  # noqa: BLE001
+                    _LOGGER.debug("Could not parse schedule cell", exc_info=True)
+                    parsed_day.append("")
+            parsed_week.append(parsed_day)
+
+        week = {
+            WEEKDAY_NAMES[idx]: [lesson for lesson in parsed_week[idx] if lesson]
+            for idx in range(7)
+        }
+        today_name = WEEKDAY_NAMES[date.today().weekday()]
+        result = {
+            "week": week,
+            "today_name": today_name,
+            "today": week[today_name],
+        }
+        if debug:
+            note = "schedule_result_empty" if not any(week.values()) else "schedule_result"
+            result["debug"] = self._page_debug(driver, note=note)
+        return result
+
+
+    def _parse_schedule_cell(self, entity: str) -> str:
+        if (
+            not ('<span style="color' in entity and "Inter" not in entity)
+            and "lesson-cell cancelled" not in entity
+        ):
+            lesson = (
+                entity.split('timetable-left">', 1)[1]
+                .split("timetable-right", 1)[0]
+                .split(">")[2]
+                .split("<", 1)[0]
+                .replace(" ", "")
+                .replace("\n", "")
+            )
+            teacher = (
+                entity.split('timetable-right">', 1)[1]
+                .split("timetable-bottom", 1)[0]
+                .split(">")[5]
+                .split("<", 1)[0]
+                .replace(" ", "")
+                .replace("\n", "")
+            )
+            room = (
+                entity.split('timetable-bottom">', 1)[1]
+                .split(">")[3]
+                .split("<", 1)[0]
+                .replace(" ", "")
+                .replace("\n", "")
+            )
+            if "fa-info-circle" in entity:
+                teacher = f"({teacher})"
+                lesson = lesson + " → selbst."
+                room = f"({room})"
+            return self._strip_tags(f"{lesson} {teacher} {room}").strip()
+
+        if "lesson-cell cancelled" in entity:
+            lesson = entity.split('lesson-cell cancelled">', 1)[1]
+            lesson = lesson.split('timetable-left">', 1)[1].split("timetable-right", 1)[0]
+            lesson = lesson.split("</", 1)[0]
+            block = entity.split("lesson-cell cancelled", 1)[1].split("</div>", 1)[0]
+            block_lines = block.split("\n")
+            teacher = block_lines[7].split("<", 1)[0][18:]
+            room = block_lines[14][22:]
+            return self._strip_tags(f"ausgefallen {lesson} {teacher} {room}").strip()
+
+        lesson_section = entity.split('timetable-left">', 1)[1].split("timetable-right", 1)[0]
+        if '<span style="color:' not in lesson_section:
+            lesson = (
+                lesson_section.split(">")[2]
+                .split("<", 1)[0]
+                .replace(" ", "")
+                .replace("\n", "")
+            )
+        else:
+            old = lesson_section.split('red;">')[2].split("<", 1)[0].replace(" ", "").replace("\n", "")
+            new = lesson_section.split('green;">')[1].split("<", 1)[0].replace(" ", "").replace("\n", "")
+            lesson = f"{old} → {new}"
+
+        teacher_section = entity.split('timetable-right">', 1)[1].split("timetable-bottom", 1)[0]
+        if '<span style="color:' not in teacher_section:
+            teacher = (
+                teacher_section.split(">")[5]
+                .split("<", 1)[0]
+                .replace(" ", "")
+                .replace("\n", "")
+            )
+        else:
+            old = teacher_section.split('red;">')[1].split("<", 1)[0].replace(" ", "").replace("\n", "")
+            new = teacher_section.split('green;">')[1].split("<", 1)[0].replace(" ", "").replace("\n", "")
+            teacher = f"{old} → {new}"
+
+        room_section = entity.split('timetable-bottom">', 1)[1]
+        if 'timetable-bottom">' in room_section:
+            room_section = room_section.split('timetable-bottom">', 1)[1]
+        if '<span style="color:' not in room_section:
+            room = room_section.split(">")[3].split("<", 1)[0].replace(" ", "").replace("\n", "")
+        elif 'red;">' in room_section:
+            old = room_section.split('red;">')[2].split("<", 1)[0].replace(" ", "").replace("\n", "")
+            new = room_section.split('green;">')[1].split("<", 1)[0].replace(" ", "").replace("\n", "")
+            room = f"{old} → {new}"
+        elif 'green;">' in room_section:
+            room = room_section.split('green;">')[1].split("<", 1)[0].replace(" ", "").replace("\n", "")
+        else:
+            room = ""
+
+        return self._strip_tags(f"{lesson} {teacher} {room}").strip()
+
+    @staticmethod
+    def _ddmmyyyy_to_iso(raw_date: str) -> str:
+        raw_date = raw_date.strip()
+        parts = raw_date.split(".")
+        if len(parts) != 3:
+            raise ValueError(f"Unsupported date format: {raw_date}")
+        day, month, year = parts
+        return f"{year.zfill(4)}-{month.zfill(2)}-{day.zfill(2)}"
+
+    @staticmethod
+    def _strip_tags(value: str) -> str:
+        value = re.sub(r"<[^>]+>", "", value)
+        value = re.sub(r"\s+", " ", value)
+        return value.strip()

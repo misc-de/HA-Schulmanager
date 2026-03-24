@@ -1,0 +1,11 @@
+refresh:
+  name: Refresh
+  description: Trigger an immediate refresh of Schulmanager data.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: Optional config entry ID. If omitted, all Schulmanager entries are refreshed.
+      example: "abc123def456"
+      required: false
+      selector:
+        text:
