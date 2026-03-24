@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up Schulmanager",
+        "description": "For the simplest setup, first start the local 'Schulmanager Bridge' add-on. The default uses your Home Assistant host IP with port 8099. If needed, you can change it manually. Optionally you can set a shared bridge secret; then the add-on and integration must use the same value.",
+        "data": {
+          "username": "Email / username",
+          "password": "Password",
+          "bridge_url": "Bridge URL",
+          "bridge_secret": "Bridge secret",
+          "scan_interval": "Update interval in minutes",
+          "modules": "Modules"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure Schulmanager",
+        "data": {
+          "username": "Email / username",
+          "password": "Password",
+          "bridge_url": "Bridge URL"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the Schulmanager bridge or portal.",
+      "invalid_auth": "Login failed.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This account is already configured.",
+      "reconfigure_successful": "Configuration updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Schulmanager options",
+        "data": {
+          "modules": "Enabled modules",
+          "scan_interval": "Update interval in minutes",
+          "bridge_url": "Bridge URL",
+          "bridge_secret": "Bridge secret"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "account": {
+        "name": "Account"
+      },
+      "schedules": {
+        "name": "Schedule today"
+      },
+      "schedules_week": {
+        "name": "Schedule week"
+      },
+      "homework": {
+        "name": "Homework"
+      },
+      "calendar": {
+        "name": "Calendar"
+      },
+      "exams": {
+        "name": "Exams"
+      },
+      "meal": {
+        "name": "Meal plan today"
+      },
+      "activities": {
+        "name": "Activities"
+      }
+    },
+    "binary_sensor": {
+      "stale_data": {
+        "name": "Stale data"
+      },
+      "module_errors": {
+        "name": "Module errors"
+      }
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "Refresh",
+      "description": "Trigger an immediate refresh of Schulmanager data.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "Optional config entry ID. If omitted, all Schulmanager entries are refreshed."
+        }
+      }
+    }
+  }
+}
