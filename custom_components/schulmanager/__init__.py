@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.18"
+INTEGRATION_BUILD = "0.3.21"
 
 import logging
 

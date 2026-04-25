@@ -154,3 +154,6 @@ Examples are available for:
 This project is based on the public Schulmanager scraping approach from:
 
 - https://github.com/SchmueI/Schulmanager-API
+
+The upstream project is licensed under GPL-3.0. This repository includes
+the GPL-3.0 license text in `LICENSE.md`.

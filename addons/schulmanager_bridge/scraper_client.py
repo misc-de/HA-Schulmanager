@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+import html as html_utils
 import logging
+import os
 import re
+import shutil
+import tempfile
 import time
 from typing import Any
 
@@ -37,6 +41,8 @@ ACCOUNT_URL = "https://login.schulmanager-online.de/#/account"
 HOMEWORK_URL = "https://login.schulmanager-online.de/#/modules/classbook/homework/"
 CALENDAR_URL = "https://login.schulmanager-online.de/#/modules/calendar/overview"
 SCHEDULE_URL = "https://login.schulmanager-online.de/#/modules/schedules/view//"
+HOMEWORK_MAX_AGE_DAYS = 14
+GERMAN_DATE_PATTERN = re.compile(r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{2,4})")
 
 
 class SchulmanagerError(Exception):
@@ -182,30 +188,86 @@ class SchulmanagerClient:
 
     def _build_driver(self) -> WebDriver:
         _LOGGER.debug("Creating local Chromium webdriver")
+        chromium_binary = self._detect_chromium_binary()
+        chromedriver_binary = self._detect_chromedriver_binary()
+
+        last_error: WebDriverException | None = None
+        for headless_arg in ("--headless=new", "--headless"):
+            user_data_dir = tempfile.mkdtemp(prefix="schulmanager-chrome-")
+            log_file = tempfile.NamedTemporaryFile(
+                prefix="schulmanager-chromedriver-",
+                suffix=".log",
+                delete=False,
+            )
+            log_path = log_file.name
+            log_file.close()
+
+            options = self._build_chrome_options(
+                chromium_binary=chromium_binary,
+                headless_arg=headless_arg,
+                user_data_dir=user_data_dir,
+            )
+            service = Service(chromedriver_binary, log_output=log_path)
+
+            try:
+                _LOGGER.debug(
+                    "Starting Chromium with %s and user-data-dir=%s",
+                    headless_arg,
+                    user_data_dir,
+                )
+                driver = webdriver.Chrome(service=service, options=options)
+                setattr(driver, "_schulmanager_user_data_dir", user_data_dir)
+                setattr(driver, "_schulmanager_chromedriver_log", log_path)
+                _LOGGER.debug("Local Chromium webdriver created successfully")
+                return driver
+            except WebDriverException as err:
+                last_error = err
+                log_excerpt = self._read_file_excerpt(log_path)
+                _LOGGER.warning(
+                    "Could not start Chromium with %s: %s%s",
+                    headless_arg,
+                    err,
+                    f" chromedriver_log={log_excerpt}" if log_excerpt else "",
+                )
+                shutil.rmtree(user_data_dir, ignore_errors=True)
+                try:
+                    os.unlink(log_path)
+                except OSError:
+                    pass
+
+        raise SchulmanagerConnectionError(
+            f"Local Chromium WebDriver could not be started: {last_error}"
+        ) from last_error
+
+    @staticmethod
+    def _build_chrome_options(
+        chromium_binary: str,
+        headless_arg: str,
+        user_data_dir: str,
+    ) -> Options:
         options = Options()
-        options.binary_location = self._detect_chromium_binary()
-        options.add_argument("--headless=new")
+        options.binary_location = chromium_binary
+        options.add_argument(headless_arg)
         options.add_argument("--window-size=1920,1080")
         options.add_argument("--disable-dev-shm-usage")
         options.add_argument("--no-sandbox")
+        options.add_argument("--disable-setuid-sandbox")
         options.add_argument("--disable-gpu")
         options.add_argument("--disable-software-rasterizer")
+        options.add_argument("--disable-extensions")
+        options.add_argument("--disable-background-networking")
+        options.add_argument("--disable-default-apps")
+        options.add_argument("--disable-sync")
+        options.add_argument("--metrics-recording-only")
+        options.add_argument("--mute-audio")
+        options.add_argument("--no-first-run")
+        options.add_argument("--no-zygote")
+        options.add_argument("--remote-debugging-port=0")
+        options.add_argument(f"--user-data-dir={user_data_dir}")
         options.add_argument(
-            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.18 (+addon bridge)"
+            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.21 (+addon bridge)"
         )
-
-        try:
-            driver = webdriver.Chrome(
-                service=Service(self._detect_chromedriver_binary()),
-                options=options,
-            )
-            _LOGGER.debug("Local Chromium webdriver created successfully")
-            return driver
-        except WebDriverException as err:
-            _LOGGER.exception("Could not start local Chromium webdriver")
-            raise SchulmanagerConnectionError(
-                f"Local Chromium WebDriver could not be started: {err}"
-            ) from err
+        return options
 
     @staticmethod
     def _detect_chromium_binary() -> str:
@@ -241,6 +303,24 @@ class SchulmanagerClient:
             driver.quit()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Driver quit failed", exc_info=True)
+        user_data_dir = getattr(driver, "_schulmanager_user_data_dir", None)
+        if isinstance(user_data_dir, str):
+            shutil.rmtree(user_data_dir, ignore_errors=True)
+        log_path = getattr(driver, "_schulmanager_chromedriver_log", None)
+        if isinstance(log_path, str):
+            try:
+                os.unlink(log_path)
+            except OSError:
+                pass
+
+    @staticmethod
+    def _read_file_excerpt(path: str, limit: int = 2000) -> str:
+        try:
+            with open(path, encoding="utf-8", errors="replace") as file:
+                content = file.read()
+        except OSError:
+            return ""
+        return content[-limit:].replace("\n", " ").strip()
 
     def _login(self, driver: WebDriver) -> None:
         _LOGGER.debug("Opening Schulmanager login page")
@@ -298,10 +378,10 @@ class SchulmanagerClient:
         _LOGGER.debug("Opening Schulmanager account page")
         driver.get(ACCOUNT_URL)
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 15).until(
                 EC.any_of(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, ".widget-tile")),
-                    EC.presence_of_element_located((By.ID, "accountDropdown")),
+                    lambda current_driver: "Angemeldet" in current_driver.page_source,
+                    lambda current_driver: "#/account" in current_driver.current_url,
                 )
             )
         except TimeoutException as err:
@@ -309,7 +389,17 @@ class SchulmanagerClient:
 
         html = driver.page_source
         if "Angemeldet" not in html:
-            time.sleep(2)
+            _LOGGER.debug(
+                "Account details not visible after first load; retrying account route from %s",
+                driver.current_url,
+            )
+            driver.execute_script("window.location.href = arguments[0];", ACCOUNT_URL)
+            try:
+                WebDriverWait(driver, 10).until(
+                    lambda current_driver: "Angemeldet" in current_driver.page_source
+                )
+            except TimeoutException:
+                time.sleep(3)
             html = driver.page_source
 
         if "Angemeldet" not in html:
@@ -469,10 +559,11 @@ class SchulmanagerClient:
         _LOGGER.debug("Collecting homework data")
         driver.get(HOMEWORK_URL)
         try:
-            WebDriverWait(driver, 8).until(
-                EC.any_of(
-                    EC.visibility_of_element_located((By.CSS_SELECTOR, ".tile")),
-                    EC.presence_of_element_located((By.TAG_NAME, "body")),
+            WebDriverWait(driver, 15).until(
+                lambda current_driver: (
+                    bool(current_driver.find_elements(By.CSS_SELECTOR, ".tile"))
+                    or bool(GERMAN_DATE_PATTERN.search(current_driver.page_source))
+                    or "Keine Hausaufgaben" in current_driver.page_source
                 )
             )
         except TimeoutException as err:
@@ -492,42 +583,135 @@ class SchulmanagerClient:
                 return result
 
         html = driver.page_source
-        blocks = html.split('tile">')
-        if blocks:
-            blocks.pop(0)
-        if blocks:
-            blocks.pop(len(blocks) - 1)
-
         output: list[dict[str, Any]] = []
-        for block in blocks:
-            try:
-                raw_date = block.split(", ", 1)[1].split("\n", 1)[0]
-                lessons = block.split("<h4 ")
-                lessons.pop(0)
-                lesson_names = [
-                    lesson.split(">", 1)[1].split("<", 1)[0] for lesson in lessons
-                ]
-                tasks = block.split("<span ")
-                tasks.pop(0)
-                task_values = [task.split(">", 1)[1].split("<", 1)[0] for task in tasks]
-                iso_date = self._ddmmyyyy_to_iso(raw_date)
-                entries = [
-                    f"{lesson_names[idx]}: {task_values[idx]}"
-                    for idx in range(min(len(lesson_names), len(task_values)))
-                ]
-                output.append({"date": iso_date, "entries": entries})
-            except (IndexError, ValueError):
-                _LOGGER.debug("Could not parse homework block", exc_info=True)
+        cutoff = date.today() - timedelta(days=HOMEWORK_MAX_AGE_DAYS)
+        parser_stats = {
+            "source": "dom",
+            "html_fallback_used": False,
+            "tiles_seen": 0,
+            "without_date": 0,
+            "older_than_cutoff": 0,
+            "without_entries": 0,
+            "cutoff_date": cutoff.isoformat(),
+        }
+
+        for tile in driver.find_elements(By.CSS_SELECTOR, ".tile"):
+            parser_stats["tiles_seen"] += 1
+            due_date = self._extract_german_date(tile.text)
+            if due_date is None:
+                parser_stats["without_date"] += 1
+                continue
+            if due_date < cutoff:
+                parser_stats["older_than_cutoff"] += 1
+                continue
+
+            entries = self._extract_homework_entries_from_tile(tile)
+            if not entries:
+                parser_stats["without_entries"] += 1
+                continue
+            output.append({"date": due_date.isoformat(), "entries": entries})
+
+        if not output:
+            parser_stats["source"] = "html"
+            parser_stats["html_fallback_used"] = True
+            parser_stats["html_tiles_seen"] = 0
+            parser_stats["html_without_date"] = 0
+            parser_stats["html_older_than_cutoff"] = 0
+            parser_stats["html_without_entries"] = 0
+            output = self._parse_homework_html(html, cutoff, parser_stats)
 
         today_str = date.today().isoformat()
         result = {
             "items": output,
             "today": [item for item in output if item["date"] == today_str],
+            "parser": parser_stats,
         }
         if debug:
             result["debug"] = self._page_debug(driver, html, note="homework_result")
-        _LOGGER.debug("Collected %s homework entries", len(result["items"]))
+        _LOGGER.debug(
+            "Collected %s homework entries with parser stats %s",
+            len(result["items"]),
+            parser_stats,
+        )
         return result
+
+    def _parse_homework_html(
+        self,
+        html: str,
+        cutoff: date,
+        parser_stats: dict[str, bool | int | str],
+    ) -> list[dict[str, Any]]:
+        output: list[dict[str, Any]] = []
+        blocks = re.split(
+            r'<div\b[^>]*class="[^"]*\btile-header\b[^"]*"[^>]*>',
+            html,
+            flags=re.IGNORECASE,
+        )
+
+        for block in blocks[1:]:
+            parser_stats["html_tiles_seen"] = int(parser_stats.get("html_tiles_seen", 0)) + 1
+            due_date = self._extract_german_date(block[:600])
+            if due_date is None:
+                parser_stats["html_without_date"] = int(parser_stats.get("html_without_date", 0)) + 1
+                continue
+            if due_date < cutoff:
+                parser_stats["html_older_than_cutoff"] = int(parser_stats.get("html_older_than_cutoff", 0)) + 1
+                continue
+
+            lesson_names = [
+                self._clean_html_text(match, single_line=True)
+                for match in re.findall(r"<h4\b[^>]*>(.*?)</h4>", block, flags=re.IGNORECASE | re.DOTALL)
+            ]
+            task_values = [
+                self._clean_html_text(match)
+                for match in re.findall(
+                    r'<span\b[^>]*style="[^"]*white-space:\s*pre-wrap[^"]*"[^>]*>(.*?)</span>',
+                    block,
+                    flags=re.IGNORECASE | re.DOTALL,
+                )
+            ]
+
+            entries = [
+                f"{lesson_names[idx]}: {task_values[idx]}"
+                for idx in range(min(len(lesson_names), len(task_values)))
+                if lesson_names[idx] or task_values[idx]
+            ]
+            if entries:
+                output.append({"date": due_date.isoformat(), "entries": entries})
+            else:
+                parser_stats["html_without_entries"] = int(parser_stats.get("html_without_entries", 0)) + 1
+        return output
+
+    def _extract_homework_entries_from_tile(self, tile) -> list[str]:
+        script = """
+            return Array.from(arguments[0].querySelectorAll('h4')).map((heading) => {
+                const container = heading.parentElement || arguments[0];
+                const task = container.querySelector('.homework-paragraph')
+                    || container.querySelector('p')
+                    || heading.nextElementSibling;
+                return {
+                    lesson: heading.innerText || heading.textContent || '',
+                    task: task ? (task.innerText || task.textContent || '') : ''
+                };
+            });
+        """
+        try:
+            rows = tile.parent.execute_script(script, tile)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Could not read homework tile via DOM script", exc_info=True)
+            return []
+
+        entries: list[str] = []
+        if not isinstance(rows, list):
+            return entries
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            lesson = self._clean_plain_text(str(row.get("lesson", "")), single_line=True)
+            task = self._clean_plain_text(str(row.get("task", "")))
+            if lesson or task:
+                entries.append(f"{lesson}: {task}" if lesson and task else lesson or task)
+        return entries
 
     def _collect_exams(self, html: str) -> dict[str, Any]:
         _LOGGER.debug("Collecting exam data from dashboard")
@@ -865,6 +1049,38 @@ class SchulmanagerClient:
             raise ValueError(f"Unsupported date format: {raw_date}")
         day, month, year = parts
         return f"{year.zfill(4)}-{month.zfill(2)}-{day.zfill(2)}"
+
+    @staticmethod
+    def _extract_german_date(value: str) -> date | None:
+        match = GERMAN_DATE_PATTERN.search(value)
+        if match is None:
+            return None
+        year = int(match.group("year"))
+        if year < 100:
+            year += 2000
+        try:
+            return date(year, int(match.group("month")), int(match.group("day")))
+        except ValueError:
+            return None
+
+    @staticmethod
+    def _clean_html_text(value: str, single_line: bool = False) -> str:
+        value = re.sub(r"<br\s*/?>", "\n", value, flags=re.IGNORECASE)
+        value = re.sub(r"</p\s*>", "\n", value, flags=re.IGNORECASE)
+        value = re.sub(r"<[^>]+>", "", value)
+        value = html_utils.unescape(value)
+        return SchulmanagerClient._clean_plain_text(value, single_line=single_line)
+
+    @staticmethod
+    def _clean_plain_text(value: str, single_line: bool = False) -> str:
+        value = html_utils.unescape(value)
+        lines = [
+            re.sub(r"[ \t]+", " ", line).strip()
+            for line in value.splitlines()
+        ]
+        lines = [line for line in lines if line]
+        separator = " " if single_line else "\n"
+        return separator.join(lines).strip()
 
     @staticmethod
     def _strip_tags(value: str) -> str:

@@ -303,5 +303,6 @@ class SchulmanagerModuleSensor(CoordinatorEntity[SchulmanagerCoordinator], Senso
         return {
             "items": data.get("items", []),
             "today": data.get("today", []),
+            "parser": data.get("parser"),
             **common,
         }

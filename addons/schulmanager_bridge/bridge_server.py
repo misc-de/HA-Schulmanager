@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, AsyncIterator
 
 import logging
 import os
@@ -38,7 +39,15 @@ class FetchRequest(AuthRequest):
     debug: bool = False
 
 
-app = FastAPI(title="Schulmanager Bridge", version="0.3.18")
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    _LOGGER.info("Starting Schulmanager Bridge 0.3.21")
+    _LOGGER.info("Chromium available: %s", Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists())
+    _LOGGER.info("Chromedriver available: %s", Path("/usr/bin/chromedriver").exists() or Path("/usr/lib/chromium/chromedriver").exists())
+    yield
+
+
+app = FastAPI(title="Schulmanager Bridge", version="0.3.21", lifespan=lifespan)
 _START_TIME = time.time()
 
 
@@ -67,20 +76,11 @@ async def log_requests(request: Request, call_next):
     return response
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    _LOGGER.info("Starting Schulmanager Bridge 0.3.18")
-    _LOGGER.info("Chromium available: %s", Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists())
-    _LOGGER.info("Chromedriver available: %s", Path("/usr/bin/chromedriver").exists() or Path("/usr/lib/chromium/chromedriver").exists())
-
-
-
-
 @app.get("/")
 def root() -> dict[str, Any]:
     return {
         "name": "Schulmanager Bridge",
-        "version": "0.3.18",
+        "version": "0.3.21",
         "endpoints": ["/health", "/diagnostics", "/validate", "/fetch"],
         "debug_hint": "POST /fetch with {\"debug\": true} to include page diagnostics for schedules/meal/homework/calendar",
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
@@ -91,7 +91,7 @@ def root() -> dict[str, Any]:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "0.3.18",
+        "version": "0.3.21",
         "uptime_seconds": round(time.time() - _START_TIME, 1),
     }
 
@@ -99,7 +99,7 @@ def health() -> dict[str, Any]:
 @app.get("/diagnostics")
 def diagnostics() -> dict[str, Any]:
     return {
-        "version": "0.3.18",
+        "version": "0.3.21",
         "log_level": LOG_LEVEL,
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
         "chromium_found": Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists() or Path("/usr/bin/google-chrome").exists(),
