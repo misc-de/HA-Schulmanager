@@ -18,7 +18,8 @@
         "data": {
           "username": "Email / username",
           "password": "Password",
-          "bridge_url": "Bridge URL"
+          "bridge_url": "Bridge URL",
+          "bridge_secret": "Bridge secret"
         }
       }
     },

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-BUILD_ID = "0.3.18-optionsflow"
+BUILD_ID = "0.3.21-optionsflow"
 
 from typing import Any
 from urllib.parse import urlparse
@@ -160,6 +160,7 @@ class SchulmanagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         CONF_USERNAME: user_input[CONF_USERNAME],
                         CONF_PASSWORD: user_input[CONF_PASSWORD],
                         CONF_BRIDGE_URL: user_input[CONF_BRIDGE_URL],
+                        CONF_BRIDGE_SECRET: user_input.get(CONF_BRIDGE_SECRET, ""),
                     },
                 )
             except CannotConnect:
@@ -181,6 +182,7 @@ class SchulmanagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     options={
                         **entry.options,
                         CONF_BRIDGE_URL: user_input[CONF_BRIDGE_URL],
+                        CONF_BRIDGE_SECRET: user_input.get(CONF_BRIDGE_SECRET, ""),
                     },
                 )
                 await self.hass.config_entries.async_reload(entry.entry_id)
@@ -200,10 +202,13 @@ class SchulmanagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     ): str,
                     vol.Required(
                         CONF_BRIDGE_URL,
-    CONF_BRIDGE_SECRET,
                         default=entry.options.get(
                             CONF_BRIDGE_URL, _default_bridge_url(self.hass)
                         ),
+                    ): str,
+                    vol.Optional(
+                        CONF_BRIDGE_SECRET,
+                        default=entry.options.get(CONF_BRIDGE_SECRET, ""),
                     ): str,
                 }
             ),
@@ -227,7 +232,6 @@ class SchulmanagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 ): str,
                 vol.Required(
                     CONF_BRIDGE_URL,
-    CONF_BRIDGE_SECRET,
                     default=(user_input or {}).get(
                         CONF_BRIDGE_URL, _default_bridge_url(self.hass)
                     ),
@@ -275,6 +279,9 @@ class SchulmanagerOptionsFlowHandler(config_entries.OptionsFlow):
         bridge_url_default = self.config_entry.options.get(
             CONF_BRIDGE_URL, DEFAULT_BRIDGE_URL
         )
+        bridge_secret_default = self.config_entry.options.get(
+            CONF_BRIDGE_SECRET, ""
+        )
 
         _LOGGER.info(
             "Opening Schulmanager options flow for %s with modules=%s interval=%s bridge=%s",
@@ -298,8 +305,11 @@ class SchulmanagerOptionsFlowHandler(config_entries.OptionsFlow):
                     ): vol.All(vol.Coerce(int), vol.Range(min=1, max=240)),
                     vol.Required(
                         CONF_BRIDGE_URL,
-    CONF_BRIDGE_SECRET,
                         default=bridge_url_default,
+                    ): str,
+                    vol.Optional(
+                        CONF_BRIDGE_SECRET,
+                        default=bridge_secret_default,
                     ): str,
                 }
             ),

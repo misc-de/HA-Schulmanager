@@ -13,7 +13,7 @@ CONF_MODULES = "modules"
 CONF_SCAN_INTERVAL = "scan_interval"
 
 DEFAULT_BRIDGE_URL = "http://local-schulmanager-bridge:8099"
-DEFAULT_SCAN_INTERVAL = 15
+DEFAULT_SCAN_INTERVAL = 60
 
 MODULE_ACCOUNT = "account"
 MODULE_SCHEDULES = "schedules"
