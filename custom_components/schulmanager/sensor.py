@@ -277,10 +277,14 @@ class SchulmanagerModuleSensor(CoordinatorEntity[SchulmanagerCoordinator], Senso
             return {
                 "today_name": data.get("today_name"),
                 "today": data.get("today", []),
+                "today_details": data.get("today_details", []),
                 "formatted_today": _join_lines(data.get("today", [])),
                 "week": week,
+                "week_details": data.get("week_details", {}),
+                "day_dates": data.get("day_dates", {}),
                 "formatted_week": _week_formatted(week),
                 "week_rows": _week_rows(week),
+                "schedule_parser": data.get("schedule_parser", {}),
                 **common,
             }
         if self.entity_description.key == "schedules_week":
@@ -288,8 +292,11 @@ class SchulmanagerModuleSensor(CoordinatorEntity[SchulmanagerCoordinator], Senso
             return {
                 "today_name": data.get("today_name"),
                 "week": week,
+                "week_details": data.get("week_details", {}),
+                "day_dates": data.get("day_dates", {}),
                 "formatted_week": _week_formatted(week),
                 "week_rows": _week_rows(week),
+                "schedule_parser": data.get("schedule_parser", {}),
                 **common,
             }
         if key == "meal":

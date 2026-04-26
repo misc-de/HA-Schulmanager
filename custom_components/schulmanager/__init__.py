@@ -2,15 +2,21 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.21"
+INTEGRATION_BUILD = "0.3.25"
 
 import logging
+from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
+
+try:
+    from homeassistant.components.http import StaticPathConfig
+except ImportError:  # pragma: no cover - older Home Assistant fallback
+    StaticPathConfig = None  # type: ignore[assignment]
 
 from .api import SchulmanagerClient
 from .const import (
@@ -28,11 +34,14 @@ _LOGGER = logging.getLogger(__name__)
 
 SERVICE_REFRESH = "refresh"
 SERVICE_SCHEMA = vol.Schema({vol.Optional("entry_id"): cv.string})
+FRONTEND_URL = "/schulmanager_static"
+FRONTEND_DIR = Path(__file__).parent / "www"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Schulmanager from yaml."""
     hass.data.setdefault(DOMAIN, {})
+    await _async_register_frontend(hass)
 
     async def _async_handle_refresh_service(call: ServiceCall) -> None:
         entry_id = call.data.get("entry_id")
@@ -57,6 +66,23 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         )
 
     return True
+
+
+async def _async_register_frontend(hass: HomeAssistant) -> None:
+    """Expose Schulmanager frontend assets."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if domain_data.get("frontend_registered"):
+        return
+
+    if hasattr(hass.http, "async_register_static_paths") and StaticPathConfig is not None:
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(FRONTEND_URL, str(FRONTEND_DIR), True)]
+        )
+    else:
+        hass.http.register_static_path(FRONTEND_URL, str(FRONTEND_DIR), True)
+
+    domain_data["frontend_registered"] = True
+    _LOGGER.info("Registered Schulmanager frontend assets at %s", FRONTEND_URL)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

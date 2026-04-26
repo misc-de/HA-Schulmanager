@@ -1,109 +1,156 @@
-# Schulmanager for Home Assistant
+# Schulmanager Online für Home Assistant
 
-A custom Home Assistant integration for **Schulmanager Online** with a local bridge add-on.
+Eine benutzerdefinierte Home-Assistant-Integration für **Schulmanager Online**
+mit lokalem Bridge-Add-on.
 
-⚠️ **AI-assisted project**  
-⚠️ **Work in progress**  
-This project is under active development. Features may change and instability is possible.
+⚠️ **KI-unterstütztes Projekt**  
+⚠️ **In aktiver Entwicklung**  
+Dieses Projekt wird aktiv weiterentwickelt. Funktionen können sich ändern und
+Instabilitäten sind möglich.
 
-This project contains two parts:
+Das Projekt besteht aus zwei Teilen:
 
-- a **Home Assistant custom integration**
-- a **local bridge add-on** that logs into Schulmanager Online and fetches data
+- einer **Home-Assistant Custom Integration**
+- einem **lokalen Bridge-Add-on**, das sich bei Schulmanager Online anmeldet und
+  die Daten abruft
 
-The bridge is required because Schulmanager access is based on browser automation.
+Die Bridge ist erforderlich, weil der Zugriff auf Schulmanager Online auf
+Browser-Automatisierung basiert.
 
-## Features
+## Funktionen
 
-- UI-based setup in Home Assistant
-- selectable Schulmanager modules
-- sensors for:
-  - account
-  - schedule (today / week)
-  - homework
-  - meal plan
-  - calendar
-  - exams
-  - activities
-- manual refresh service
-- stale/error binary sensors
-- optional shared secret between integration and bridge
-- dashboard markdown examples included
+- Einrichtung direkt über die Home-Assistant-Oberfläche
+- auswählbare Schulmanager-Online-Module
+- Sensoren für:
+  - Konto
+  - Stundenplan heute / Woche
+  - Hausaufgaben
+  - Speiseplan
+  - Kalender
+  - Klausuren
+  - AGs / Veranstaltungen
+- manueller Aktualisierungsdienst
+- Binary-Sensoren für veraltete Daten und Modulfehler
+- optionales gemeinsames Secret zwischen Integration und Bridge
+- fertige Dashboard-Cards für Stundenplan und Hausaufgaben
 
-## Repository structure
+## Unterstützte Module
 
-- `custom_components/schulmanager` – Home Assistant custom integration
-- `addons/schulmanager_bridge` – local Home Assistant add-on
-- `markdown-examples` – ready-to-use dashboard markdown cards
+Schulmanager Online bietet je nach Schule unterschiedliche Module und
+Freischaltungen. Diese Integration unterstützt aktuell nur einen Teil davon.
+Die Balken zeigen grob den aktuellen Projektstand, nicht die Verfügbarkeit an
+deiner Schule.
 
-## Quick installation
+| Modul in Schulmanager Online | Status | Unterstützung | Hinweis |
+| --- | --- | --- | --- |
+| Konto | stabil | `██████████` 100 % | Name, Klasse und Basisdaten |
+| Stundenplan | gut nutzbar | `████████░░` 80 % | Heute, Woche, Ausfall und Raumänderungen |
+| Hausaufgaben | gut nutzbar | `████████░░` 80 % | Datumsgruppen, Fächer und Einträge |
+| Speiseplan | teilweise | `██████░░░░` 60 % | Tagesansicht als Sensor |
+| Kalender | teilweise | `█████░░░░░` 50 % | einfache Termine |
+| Klausuren | teilweise | `████░░░░░░` 40 % | abhängig vom Schulmanager-Online-Layout |
+| AGs / Veranstaltungen | experimentell | `███░░░░░░░` 30 % | einfache Einträge |
+| Nachrichten / Mitteilungen | nicht unterstützt | `░░░░░░░░░░` 0 % | noch nicht implementiert |
+| Krankmeldungen / Abwesenheiten | nicht unterstützt | `░░░░░░░░░░` 0 % | noch nicht implementiert |
+| Elternbriefe / Dokumente | nicht unterstützt | `░░░░░░░░░░` 0 % | noch nicht implementiert |
 
-### 1. Install the add-on files
+## Repository-Struktur
 
-Copy the folder:
+- `custom_components/schulmanager` - Home-Assistant Custom Integration
+- `addons/schulmanager_bridge` - lokales Home-Assistant Add-on
+- `docs/markdown-examples` - Dashboard-Beispiele und Card-Konfigurationen
+
+## Schnellinstallation
+
+### 1. Custom Integration mit HACS installieren
+
+In HACS:
+
+- **HACS → Integrationen**
+- Menü mit den drei Punkten öffnen
+- **Benutzerdefinierte Repositories** auswählen
+- Repository: `https://github.com/misc-de/HA-Schulmanager`
+- Kategorie: **Integration**
+- hinzufügen und anschließend **Schulmanager Online** installieren
+
+Danach Home Assistant neu starten.
+
+### 2. Bridge Add-on Repository installieren
+
+Das Bridge-Add-on wird nicht über HACS installiert. Füge dasselbe GitHub-
+Repository im Home-Assistant Add-on Store hinzu:
+
+- **Einstellungen → Add-ons → Add-on Store**
+- Menü mit den drei Punkten öffnen
+- **Repositories** auswählen
+- `https://github.com/misc-de/HA-Schulmanager` hinzufügen
+
+Danach **Schulmanager Online Bridge** aus dem Add-on Store installieren.
+
+### Alternative: manuelle Installation
+
+Add-on-Ordner kopieren:
 
 - `addons/schulmanager_bridge`
 
-to your Home Assistant local add-on directory, usually:
+in das lokale Add-on-Verzeichnis von Home Assistant:
 
 - `/addons/local/schulmanager_bridge/`
 
-Then restart Home Assistant.
-
-### 2. Install the custom integration files
-
-Copy the folder:
+Integrationsordner kopieren:
 
 - `custom_components/schulmanager`
 
-to your Home Assistant config directory:
+in das Home-Assistant-Konfigurationsverzeichnis:
 
 - `/config/custom_components/schulmanager/`
 
-Then restart Home Assistant again.
+Danach Home Assistant neu starten.
 
-### 3. Start the bridge add-on
+### 3. Bridge Add-on starten
 
-Open Home Assistant:
+In Home Assistant öffnen:
 
-- **Settings → Add-ons → Schulmanager Bridge**
+- **Einstellungen → Add-ons → Schulmanager Online Bridge**
 
-Install and start the add-on.
+Add-on installieren und starten.
 
-If needed, configure an optional shared secret:
+Optional kann ein gemeinsames Secret gesetzt werden:
 
 ```yaml
-bridge_secret: "your-shared-secret"
+bridge_secret: "dein-gemeinsames-secret"
 ```
 
-### 4. Add the integration
+### 4. Integration hinzufügen
 
-Open:
+In Home Assistant öffnen:
 
-- **Settings → Devices & Services**
-- **Add Integration**
-- choose **Schulmanager**
+- **Einstellungen → Geräte & Dienste**
+- **Integration hinzufügen**
+- **Schulmanager Online** auswählen
 
-Enter:
+Eintragen:
 
-- username / email
-- password
-- bridge URL
-- modules to enable
+- Benutzername / E-Mail
+- Passwort
+- Bridge-URL
+- gewünschte Module
 
-The integration suggests the Home Assistant host IP with port `8099` as default bridge URL.
+Die Integration schlägt standardmäßig die IP deines Home-Assistant-Hosts mit
+Port `8099` vor.
 
-Example:
+Beispiel:
 
 ```text
 http://192.168.0.1:8099
 ```
 
-If you use a shared secret in the add-on, enter the same value in the integration options.
+Wenn im Add-on ein gemeinsames Secret konfiguriert wurde, muss derselbe Wert in
+den Optionen der Integration eingetragen werden.
 
-## Updating sensors manually
+## Sensoren manuell aktualisieren
 
-You can force an update with the built-in service:
+Eine Aktualisierung kann über den integrierten Dienst ausgelöst werden:
 
 ```yaml
 action: schulmanager.refresh
@@ -111,49 +158,89 @@ target: {}
 data: {}
 ```
 
-Or only for one config entry:
+Oder nur für einen bestimmten Config-Entry:
 
 ```yaml
 action: schulmanager.refresh
 target: {}
 data:
-  entry_id: "YOUR_CONFIG_ENTRY_ID"
+  entry_id: "DEINE_CONFIG_ENTRY_ID"
 ```
 
-## Security notes
+## Sicherheit
 
-- Do **not** expose port `8099` to the public internet.
-- Keep the bridge inside your local network only.
-- Use the optional shared secret if you want to protect bridge access further.
-- Avoid leaving verbose debug logging enabled permanently.
+- Port `8099` nicht öffentlich ins Internet freigeben.
+- Die Bridge nur im lokalen Netzwerk betreiben.
+- Das optionale gemeinsame Secret nutzen, wenn der Bridge-Zugriff zusätzlich
+  geschützt werden soll.
+- Ausführliches Debug-Logging nicht dauerhaft aktiviert lassen.
 
-## Dashboard examples
+## Dashboard-Cards
 
-Ready-made markdown examples are included in:
+Fertige Dashboard-Beispiele liegen unter:
 
-- `markdown-examples/`
+- `docs/markdown-examples/`
 
-Examples are available for:
+Für Wochenstundenplan und Hausaufgaben gibt es eigene Lovelace-Cards. Die
+Frontend-Ressource muss einmal hinzugefügt werden:
 
-- schedule week
-- schedule today
-- meal plan today
-- homework
-- debug status
-- manual refresh
-- security setup
+```text
+/schulmanager_static/schulmanager-timetable-card.js?v=0.3.25
+```
 
-## Notes
+Ressourcentyp: `JavaScript Module`
 
-- The bridge depends on browser automation and may need parser adjustments if the Schulmanager layout changes.
-- Some schools use slightly different page structures.
-- If data is temporarily empty, the integration keeps the last known good values when possible.
+Stundenplan-Card:
 
-## Upstream reference
+```yaml
+type: custom:schulmanager-timetable-card
+entity: sensor.YOUR_SCHULMANAGER_SCHEDULE_WEEK_ENTITY
+title: Stundenplan
+```
 
-This project is based on the public Schulmanager scraping approach from:
+Hausaufgaben-Card:
+
+```yaml
+type: custom:schulmanager-homework-card
+entity: sensor.YOUR_SCHULMANAGER_HOMEWORK_ENTITY
+title: Hausaufgaben
+```
+
+Beim Hinzufügen über den visuellen Editor bieten die Cards eine Entitätsauswahl
+und bevorzugen passende Schulmanager-Online-Sensoren. Die Integration stellt die
+Card-Ressource automatisch bereit. Home Assistant bietet jedoch keine stabile
+Integrations-API, um beim Installieren oder Aktualisieren ungefragt Dashboard-
+Ressourcen oder Karten in Benutzer-Dashboards einzutragen.
+
+Verfügbare Beispiele:
+
+- Stundenplan-Wochenkarte
+- Hausaufgaben-Karte
+- Debug-Status
+- manuelle Aktualisierung
+- Sicherheits-Setup
+
+## Tests
+
+Parser-Unit-Tests ausführen:
+
+```bash
+python -m pytest tests
+```
+
+## Hinweise
+
+- Die Bridge nutzt Browser-Automatisierung und kann Parser-Anpassungen
+  benötigen, wenn Schulmanager Online das Layout ändert.
+- Schulen können leicht unterschiedliche Seitenstrukturen verwenden.
+- Wenn Daten vorübergehend leer sind, behält die Integration nach Möglichkeit
+  die letzten erfolgreich geladenen Daten bei.
+
+## Upstream-Referenz
+
+Dieses Projekt basiert auf dem öffentlichen Schulmanager-Online-Scraping-Ansatz aus:
 
 - https://github.com/SchmueI/Schulmanager-API
 
-The upstream project is licensed under GPL-3.0. This repository includes
-the GPL-3.0 license text in `LICENSE.md`.
+Das Upstream-Projekt ist unter GPL-3.0 lizenziert. Der GPL-3.0-Lizenztext liegt
+in diesem Repository unter `LICENSE.md`.
