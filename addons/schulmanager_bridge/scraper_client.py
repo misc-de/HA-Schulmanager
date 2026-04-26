@@ -265,7 +265,7 @@ class SchulmanagerClient:
         options.add_argument("--remote-debugging-port=0")
         options.add_argument(f"--user-data-dir={user_data_dir}")
         options.add_argument(
-            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.21 (+addon bridge)"
+            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.22 (+addon bridge)"
         )
         return options
 
@@ -901,6 +901,31 @@ class SchulmanagerClient:
                 result["debug"] = self._page_debug(driver, html, note="schedule_table_missing")
             return result
 
+        detailed_schedule = self._collect_schedule_details_dom(driver)
+        if detailed_schedule.get("week_details"):
+            week_details = detailed_schedule["week_details"]
+            week = {
+                day_name: [
+                    self._format_schedule_entry(entry)
+                    for entry in week_details.get(day_name, [])
+                ]
+                for day_name in WEEKDAY_NAMES
+            }
+            today_name = WEEKDAY_NAMES[date.today().weekday()]
+            result = {
+                "week": week,
+                "today_name": today_name,
+                "today": week.get(today_name, []),
+                "week_details": week_details,
+                "today_details": week_details.get(today_name, []),
+                "day_dates": detailed_schedule.get("day_dates", {}),
+                "schedule_parser": detailed_schedule.get("parser", {}),
+            }
+            if debug:
+                note = "schedule_dom_result_empty" if not any(week.values()) else "schedule_dom_result"
+                result["debug"] = self._page_debug(driver, note=note)
+            return result
+
         html = html.split("<table", 1)[1]
         html = html.split("</table>", 1)[0]
         rows = html.split("<tr>")
@@ -954,6 +979,168 @@ class SchulmanagerClient:
             result["debug"] = self._page_debug(driver, note=note)
         return result
 
+    def _collect_schedule_details_dom(self, driver: WebDriver) -> dict[str, Any]:
+        script = """
+            const table = document.querySelector('table.calendar-table');
+            if (!table) return {headers: [], entries: []};
+
+            const clean = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+            const text = (node) => clean(node ? (node.innerText || node.textContent || '') : '');
+            const directText = (node) => {
+                if (!node) return '';
+                let parts = [];
+                node.childNodes.forEach((child) => {
+                    if (child.nodeType === Node.TEXT_NODE) {
+                        parts.push(child.textContent || '');
+                    } else if (child.nodeType === Node.ELEMENT_NODE && child.tagName !== 'VISUAL-DIFF') {
+                        parts.push(child.innerText || child.textContent || '');
+                    } else if (child.nodeType === Node.ELEMENT_NODE) {
+                        parts.push(child.innerText || child.textContent || '');
+                    }
+                });
+                return clean(parts.join(' '));
+            };
+            const diffValue = (node) => {
+                if (!node) return {current: '', old: '', changed: false};
+                const red = Array.from(node.querySelectorAll('span[style*="red"]')).map(text).filter(Boolean);
+                const green = Array.from(node.querySelectorAll('span[style*="green"]')).map(text).filter(Boolean);
+                const oldValue = clean(red.join(' ').replace(/[()]/g, ''));
+                const currentValue = green.length ? clean(green.join(' ')) : directText(node);
+                return {current: currentValue, old: oldValue, changed: Boolean(oldValue || green.length)};
+            };
+
+            const headers = Array.from(table.querySelectorAll('thead th')).slice(1).map((header, index) => ({
+                day_index: index,
+                label: text(header),
+            }));
+
+            const entries = [];
+            Array.from(table.querySelectorAll('tbody tr')).forEach((row) => {
+                const lessonNumber = text(row.querySelector('th'));
+                Array.from(row.querySelectorAll('td')).forEach((column, dayIndex) => {
+                    Array.from(column.querySelectorAll('.lesson-cell')).forEach((cell, cellIndex) => {
+                        const subject = diffValue(cell.querySelector('.timetable-left'));
+                        const teacher = diffValue(cell.querySelector('.timetable-right'));
+                        const room = diffValue(cell.querySelector('.timetable-bottom'));
+                        entries.push({
+                            day_index: dayIndex,
+                            lesson_number: lessonNumber,
+                            cell_index: cellIndex,
+                            subject: subject.current,
+                            subject_old: subject.old,
+                            subject_changed: subject.changed,
+                            teacher: teacher.current,
+                            teacher_old: teacher.old,
+                            teacher_changed: teacher.changed,
+                            room: room.current,
+                            room_old: room.old,
+                            room_changed: room.changed,
+                            cancelled: cell.classList.contains('cancelled'),
+                            raw: text(cell),
+                        });
+                    });
+                });
+            });
+
+            return {headers, entries};
+        """
+        try:
+            raw = driver.execute_script(script)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Could not collect structured schedule via DOM", exc_info=True)
+            return {}
+
+        if not isinstance(raw, dict):
+            return {}
+
+        headers = raw.get("headers", [])
+        raw_entries = raw.get("entries", [])
+        if not isinstance(headers, list) or not isinstance(raw_entries, list):
+            return {}
+
+        day_dates: dict[str, str | None] = {}
+        day_by_index: dict[int, str] = {}
+        for index, header in enumerate(headers):
+            day_name = WEEKDAY_NAMES[index] if index < len(WEEKDAY_NAMES) else f"day_{index}"
+            day_by_index[index] = day_name
+            label = header.get("label", "") if isinstance(header, dict) else ""
+            day_dates[day_name] = self._extract_schedule_header_date(label)
+
+        week_details: dict[str, list[dict[str, Any]]] = {
+            day_name: [] for day_name in WEEKDAY_NAMES
+        }
+        for raw_entry in raw_entries:
+            if not isinstance(raw_entry, dict):
+                continue
+            day_index = raw_entry.get("day_index")
+            if not isinstance(day_index, int):
+                continue
+            day_name = day_by_index.get(day_index)
+            if day_name is None:
+                continue
+            entry = {
+                "lesson_number": raw_entry.get("lesson_number") or "",
+                "date": day_dates.get(day_name),
+                "subject": raw_entry.get("subject") or "",
+                "teacher": raw_entry.get("teacher") or "",
+                "room": raw_entry.get("room") or "",
+                "cancelled": bool(raw_entry.get("cancelled")),
+                "cell_index": raw_entry.get("cell_index", 0),
+                "raw": raw_entry.get("raw") or "",
+            }
+            for field in ("subject", "teacher", "room"):
+                old_value = raw_entry.get(f"{field}_old") or ""
+                changed = bool(raw_entry.get(f"{field}_changed"))
+                if old_value:
+                    entry[f"{field}_old"] = old_value
+                if changed:
+                    entry[f"{field}_changed"] = True
+            week_details[day_name].append(entry)
+
+        return {
+            "week_details": week_details,
+            "day_dates": day_dates,
+            "parser": {
+                "source": "dom",
+                "headers_seen": len(headers),
+                "entries_seen": len(raw_entries),
+            },
+        }
+
+    @staticmethod
+    def _format_schedule_entry(entry: dict[str, Any]) -> str:
+        parts: list[str] = []
+        lesson_number = str(entry.get("lesson_number") or "").strip()
+        if lesson_number:
+            parts.append(f"{lesson_number}.")
+        if entry.get("cancelled"):
+            parts.append("ausgefallen")
+
+        subject = str(entry.get("subject") or "").strip()
+        teacher = str(entry.get("teacher") or "").strip()
+        room = str(entry.get("room") or "").strip()
+        if subject:
+            parts.append(subject)
+        if teacher:
+            parts.append(teacher)
+        if room:
+            room_old = str(entry.get("room_old") or "").strip()
+            if room_old and room_old != room:
+                parts.append(f"{room_old} -> {room}")
+            else:
+                parts.append(room)
+        return " ".join(parts).strip()
+
+    @staticmethod
+    def _extract_schedule_header_date(value: str) -> str | None:
+        match = re.search(r"(\d{1,2})\.(\d{1,2})\.\s*(\d{4})", value)
+        if match is None:
+            return None
+        day, month, year = match.groups()
+        try:
+            return date(int(year), int(month), int(day)).isoformat()
+        except ValueError:
+            return None
 
     def _parse_schedule_cell(self, entity: str) -> str:
         if (

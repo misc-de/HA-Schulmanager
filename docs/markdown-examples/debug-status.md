@@ -1,4 +1,3 @@
-```yaml
 type: markdown
 title: Schulmanager Debug
 content: |
@@ -16,4 +15,3 @@ content: |
 
   last_attempted_update:
   {{ state_attr('sensor.YOUR_SCHULMANAGER_SCHEDULE_WEEK_ENTITY', 'last_attempted_update') }}
-```

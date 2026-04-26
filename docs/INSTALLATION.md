@@ -7,7 +7,34 @@ This project consists of two parts:
 
 Both parts are required.
 
-## 1. Copy the add-on
+## 1. Install the custom integration with HACS
+
+In HACS:
+
+- **HACS → Integrations**
+- open the menu with the three dots
+- choose **Custom repositories**
+- repository: `https://github.com/misc-de/HA-Schulmanager`
+- category: **Integration**
+- add it, then install **Schulmanager**
+
+Restart Home Assistant afterwards.
+
+## 2. Install the bridge add-on repository
+
+The bridge add-on is not installed through HACS. Add the same GitHub repository
+to the Home Assistant add-on store:
+
+- **Settings → Add-ons → Add-on Store**
+- open the menu with the three dots
+- choose **Repositories**
+- add `https://github.com/misc-de/HA-Schulmanager`
+
+Then install **Schulmanager Bridge** from the add-on store.
+
+## Alternative: manual installation
+
+### Copy the add-on
 
 Copy the folder:
 
@@ -19,7 +46,7 @@ into your Home Assistant local add-on directory, usually:
 
 Restart Home Assistant afterwards.
 
-## 2. Copy the custom integration
+### Copy the custom integration
 
 Copy the folder:
 
