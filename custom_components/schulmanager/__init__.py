@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.26"
+INTEGRATION_BUILD = "0.3.27"
 
 import logging
 from pathlib import Path
@@ -18,6 +18,11 @@ try:
     from homeassistant.components.http import StaticPathConfig
 except ImportError:  # pragma: no cover - older Home Assistant fallback
     StaticPathConfig = None  # type: ignore[assignment]
+
+try:
+    from homeassistant.components.frontend import add_extra_js_url
+except ImportError:  # pragma: no cover - older Home Assistant fallback
+    add_extra_js_url = None  # type: ignore[assignment]
 
 from .api import SchulmanagerClient
 from .const import (
@@ -37,6 +42,7 @@ SERVICE_REFRESH = "refresh"
 SERVICE_SCHEMA = vol.Schema({vol.Optional("entry_id"): cv.string})
 FRONTEND_URL = "/schulmanager_static"
 FRONTEND_DIR = Path(__file__).parent / "www"
+FRONTEND_CARD_URL = f"{FRONTEND_URL}/schulmanager-timetable-card.js?v={INTEGRATION_BUILD}"
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
@@ -99,6 +105,15 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         )
     else:
         hass.http.register_static_path(FRONTEND_URL, str(FRONTEND_DIR), True)
+
+    if add_extra_js_url is not None:
+        add_extra_js_url(hass, FRONTEND_CARD_URL)
+        _LOGGER.info("Registered Schulmanager frontend module %s", FRONTEND_CARD_URL)
+    else:
+        _LOGGER.warning(
+            "Home Assistant frontend module registration is not available; add %s manually as a dashboard resource.",
+            FRONTEND_CARD_URL,
+        )
 
     domain_data["frontend_registered"] = True
     _LOGGER.info("Registered Schulmanager frontend assets at %s", FRONTEND_URL)
