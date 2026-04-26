@@ -5,8 +5,12 @@
     "@openai"
   ],
   "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http"
+  ],
   "documentation": "https://github.com/SchmueI/Schulmanager-API",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "version": "0.3.26"
+  "version": "0.3.27"
 }

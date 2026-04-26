@@ -110,20 +110,18 @@ Repository im Home-Assistant Add-on Store hinzu:
 
 Danach **Schulmanager Online Bridge** aus dem Add-on Store installieren.
 
-### 3. Dashboard-Ressource für die Cards hinzufügen
+### 3. Dashboard-Cards laden
 
-Wenn die fertigen Dashboard-Cards genutzt werden sollen, muss diese Ressource
-einmal in Home Assistant hinzugefügt werden:
+Die Integration lädt die Dashboard-Cards automatisch als Frontend-Modul:
 
 ```text
-/schulmanager_static/schulmanager-timetable-card.js?v=0.3.26
+/schulmanager_static/schulmanager-timetable-card.js?v=0.3.27
 ```
 
-Ressourcentyp: `JavaScript Module`
-
-Die Datei wird von der Integration bereitgestellt. Nach Updates kann es
-erforderlich sein, den Versionsparameter `v=...` anzupassen oder den Browser-
-Cache zu leeren.
+Nach einem Update ist ein Home-Assistant-Neustart und ein harter Browser-Reload
+oft nötig. Falls die Cards trotzdem nicht gefunden werden, kann dieselbe URL
+zusätzlich manuell als Dashboard-Ressource mit Typ `JavaScript Module`
+eingetragen werden.
 
 ### Alternative: manuelle Installation
 
@@ -220,13 +218,14 @@ Fertige Dashboard-Beispiele liegen unter:
 - `docs/markdown-examples/`
 
 Für Wochenstundenplan und Hausaufgaben gibt es eigene Lovelace-Cards. Die
-Frontend-Ressource muss einmal hinzugefügt werden:
+Integration lädt die Frontend-Ressource normalerweise automatisch:
 
 ```text
-/schulmanager_static/schulmanager-timetable-card.js?v=0.3.26
+/schulmanager_static/schulmanager-timetable-card.js?v=0.3.27
 ```
 
-Ressourcentyp: `JavaScript Module`
+Falls Home Assistant die Cards nicht automatisch lädt, kann diese URL manuell
+als Dashboard-Ressource mit Typ `JavaScript Module` hinzugefügt werden.
 
 Stundenplan-Card:
 
