@@ -8,14 +8,37 @@ mit lokalem Bridge-Add-on.
 Dieses Projekt wird aktiv weiterentwickelt. Funktionen können sich ändern und
 Instabilitäten sind möglich.
 
-Das Projekt besteht aus zwei Teilen:
+Das Projekt besteht aus mehreren Home-Assistant-Bausteinen:
 
 - einer **Home-Assistant Custom Integration**
 - einem **lokalen Bridge-Add-on**, das sich bei Schulmanager Online anmeldet und
   die Daten abruft
+- optionalen **Lovelace Dashboard-Cards** für Stundenplan und Hausaufgaben
 
 Die Bridge ist erforderlich, weil der Zugriff auf Schulmanager Online auf
 Browser-Automatisierung basiert.
+
+## Was wird wodurch installiert?
+
+Home Assistant trennt Integrationen, Add-ons und Dashboard-Ressourcen technisch
+voneinander. Deshalb gibt es keine echte Alles-in-einem-Installation über HACS.
+
+| Baustein | Installation | Zweck |
+| --- | --- | --- |
+| Custom Integration | HACS Custom Repository | erzeugt Sensoren, Dienste und Optionen in Home Assistant |
+| Bridge Add-on | Home-Assistant Add-on Store Repository | meldet sich bei Schulmanager Online an und liefert Daten an die Integration |
+| Lovelace Cards | Dashboard-Ressource | zeigt Stundenplan und Hausaufgaben als fertige Cards im Dashboard an |
+
+Für HACS und Add-on Store wird dieselbe GitHub-Adresse verwendet:
+
+```text
+https://github.com/misc-de/HA-Schulmanager
+```
+
+Die Integration stellt die Card-Datei bereit, aber Home Assistant bietet keine
+stabile Integrations-API, um Dashboard-Ressourcen oder Karten ungefragt beim
+Installieren oder Aktualisieren einzutragen. Die Ressource muss daher einmal im
+Dashboard hinzugefügt werden.
 
 ## Funktionen
 
@@ -60,7 +83,7 @@ deiner Schule.
 - `addons/schulmanager_bridge` - lokales Home-Assistant Add-on
 - `docs/markdown-examples` - Dashboard-Beispiele und Card-Konfigurationen
 
-## Schnellinstallation
+## Installation
 
 ### 1. Custom Integration mit HACS installieren
 
@@ -87,6 +110,21 @@ Repository im Home-Assistant Add-on Store hinzu:
 
 Danach **Schulmanager Online Bridge** aus dem Add-on Store installieren.
 
+### 3. Dashboard-Ressource für die Cards hinzufügen
+
+Wenn die fertigen Dashboard-Cards genutzt werden sollen, muss diese Ressource
+einmal in Home Assistant hinzugefügt werden:
+
+```text
+/schulmanager_static/schulmanager-timetable-card.js?v=0.3.26
+```
+
+Ressourcentyp: `JavaScript Module`
+
+Die Datei wird von der Integration bereitgestellt. Nach Updates kann es
+erforderlich sein, den Versionsparameter `v=...` anzupassen oder den Browser-
+Cache zu leeren.
+
 ### Alternative: manuelle Installation
 
 Add-on-Ordner kopieren:
@@ -107,7 +145,7 @@ in das Home-Assistant-Konfigurationsverzeichnis:
 
 Danach Home Assistant neu starten.
 
-### 3. Bridge Add-on starten
+### 4. Bridge Add-on starten
 
 In Home Assistant öffnen:
 
@@ -121,7 +159,7 @@ Optional kann ein gemeinsames Secret gesetzt werden:
 bridge_secret: "dein-gemeinsames-secret"
 ```
 
-### 4. Integration hinzufügen
+### 5. Integration hinzufügen
 
 In Home Assistant öffnen:
 
@@ -185,7 +223,7 @@ Für Wochenstundenplan und Hausaufgaben gibt es eigene Lovelace-Cards. Die
 Frontend-Ressource muss einmal hinzugefügt werden:
 
 ```text
-/schulmanager_static/schulmanager-timetable-card.js?v=0.3.25
+/schulmanager_static/schulmanager-timetable-card.js?v=0.3.26
 ```
 
 Ressourcentyp: `JavaScript Module`

@@ -24,7 +24,7 @@ You can find the real entity IDs in Home Assistant under:
 
 Add this dashboard resource once:
 
-/schulmanager_static/schulmanager-timetable-card.js?v=0.3.25
+/schulmanager_static/schulmanager-timetable-card.js?v=0.3.26
 
 Resource type: `JavaScript Module`
 

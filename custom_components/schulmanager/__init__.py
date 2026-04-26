@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.25"
+INTEGRATION_BUILD = "0.3.26"
 
 import logging
 from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
 import voluptuous as vol
@@ -47,15 +48,33 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
         entry_id = call.data.get("entry_id")
         targets: list[tuple[str, SchulmanagerCoordinator]] = []
         for current_entry_id, payload in hass.data.get(DOMAIN, {}).items():
+            if not isinstance(payload, dict):
+                continue
             if entry_id and current_entry_id != entry_id:
                 continue
             coordinator = payload.get("coordinator")
             if coordinator is not None:
                 targets.append((current_entry_id, coordinator))
 
+        if not targets:
+            raise HomeAssistantError(
+                f"Keine Schulmanager-Online-Integration für entry_id='{entry_id}' gefunden."
+                if entry_id
+                else "Keine Schulmanager-Online-Integration zum Aktualisieren gefunden."
+            )
+
         for current_entry_id, coordinator in targets:
             _LOGGER.info("Manual Schulmanager refresh requested for entry '%s'", current_entry_id)
-            await coordinator.async_request_refresh()
+            try:
+                await coordinator.async_request_refresh()
+            except Exception as err:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Manual Schulmanager refresh failed for entry '%s'",
+                    current_entry_id,
+                )
+                raise HomeAssistantError(
+                    f"Schulmanager Online konnte nicht aktualisiert werden: {err}"
+                ) from err
 
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
         hass.services.async_register(

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-BUILD_ID = "0.3.25-optionsflow"
+BUILD_ID = "0.3.26-optionsflow"
 
 from typing import Any
 from urllib.parse import urlparse
