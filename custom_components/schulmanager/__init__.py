@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.29"
+INTEGRATION_BUILD = "0.3.30"
 
 import logging
 from pathlib import Path
