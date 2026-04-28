@@ -219,13 +219,89 @@ def test_collect_activities_no_marker_returns_empty() -> None:
     assert result == {"items": [], "today": []}
 
 
-def test_collect_activities_parses_ag_entry() -> None:
+def test_collect_activities_parses_ag_entry_html_fallback() -> None:
+    """No driver → HTML fallback parser."""
     module = load_scraper_module()
     client = module.SchulmanagerClient("user", "pw")
     result = client._collect_activities(_ACTIVITIES_HTML)
     assert len(result["items"]) == 1
     assert result["items"][0]["date"] == "2026-04-25"
     assert any("Volleyball" in e for e in result["items"][0]["entries"])
+
+
+def test_collect_activities_dom_uses_execute_script() -> None:
+    """DOM path: execute_script returns structured data → correct result."""
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+
+    class FakeDriver:
+        def execute_script(self, _script: str) -> list:
+            return [
+                {
+                    "raw_date": "25.04.2026",
+                    "entries": ["14:30 AG Volleyball", "16:00 AG Chor"],
+                },
+                {
+                    "raw_date": "28.04.2026",
+                    "entries": ["15:00 AG Robotik"],
+                },
+            ]
+
+    result = client._collect_activities(_ACTIVITIES_HTML, driver=FakeDriver())
+    assert len(result["items"]) == 2
+    assert result["items"][0]["date"] == "2026-04-25"
+    assert result["items"][0]["entries"] == ["14:30 AG Volleyball", "16:00 AG Chor"]
+    assert result["items"][1]["date"] == "2026-04-28"
+
+
+def test_collect_activities_dom_falls_back_to_empty_on_script_error() -> None:
+    """execute_script raises → returns empty list gracefully."""
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+
+    class FailingDriver:
+        def execute_script(self, _script: str):
+            raise RuntimeError("JS engine error")
+
+    result = client._collect_activities(_ACTIVITIES_HTML, driver=FailingDriver())
+    assert result == {"items": [], "today": []}
+
+
+def test_collect_activities_dom_skips_non_ag_entries() -> None:
+    """execute_script returns items without 'AG ' → they are not included."""
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+
+    class FakeDriver:
+        def execute_script(self, _script: str) -> list:
+            return [
+                {
+                    "raw_date": "25.04.2026",
+                    "entries": ["14:30 AG Tennis"],  # only AG Tennis, no plain event
+                }
+            ]
+
+    result = client._collect_activities(_ACTIVITIES_HTML, driver=FakeDriver())
+    assert result["items"][0]["entries"] == ["14:30 AG Tennis"]
+
+
+def test_collect_activities_dom_ignores_malformed_items() -> None:
+    """execute_script returns a mix of valid and invalid records."""
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+
+    class FakeDriver:
+        def execute_script(self, _script: str) -> list:
+            return [
+                None,                               # not a dict
+                {"raw_date": "", "entries": ["AG X"]},   # empty date → skip
+                {"raw_date": "25.04.2026", "entries": []},  # no entries → skip
+                {"raw_date": "25.04.2026", "entries": ["14:30 AG Tennis"]},  # valid
+            ]
+
+    result = client._collect_activities(_ACTIVITIES_HTML, driver=FakeDriver())
+    assert len(result["items"]) == 1
+    assert result["items"][0]["date"] == "2026-04-25"
 
 
 # ── _module_error_result ──────────────────────────────────────────────────────

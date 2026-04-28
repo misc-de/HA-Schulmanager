@@ -168,7 +168,7 @@ class SchulmanagerClient:
                             data[module] = self._module_error_result(data, module, err)
 
             if "activities" in modules and "activities" not in data:
-                data["activities"] = self._safe_collect_module(data, "activities", self._collect_activities, dashboard_html)
+                data["activities"] = self._safe_collect_module(data, "activities", self._collect_activities, dashboard_html, driver)
             if "exams" in modules and "exams" not in data:
                 data["exams"] = self._safe_collect_module(data, "exams", self._collect_exams, dashboard_html)
             if "meal" in modules and "meal" not in data:
@@ -265,7 +265,7 @@ class SchulmanagerClient:
         options.add_argument("--remote-debugging-port=0")
         options.add_argument(f"--user-data-dir={user_data_dir}")
         options.add_argument(
-            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.22 (+addon bridge)"
+            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.29 (+addon bridge)"
         )
         return options
 
@@ -818,10 +818,110 @@ class SchulmanagerClient:
             result["debug"] = self._page_debug(driver, html, note="meal_result")
         return result
 
-    def _collect_activities(self, html: str) -> dict[str, Any]:
+    def _collect_activities(self, html: str, driver: WebDriver | None = None) -> dict[str, Any]:
         if "Kommende Termine" not in html:
             return {"items": [], "today": []}
 
+        if driver is not None:
+            output = self._collect_activities_dom(driver)
+        else:
+            _LOGGER.debug("No driver available for activities; using HTML fallback parser")
+            output = self._collect_activities_html(html)
+
+        today_str = date.today().isoformat()
+        return {
+            "items": output,
+            "today": [item for item in output if item["date"] == today_str],
+        }
+
+    def _collect_activities_dom(self, driver: WebDriver) -> list[dict[str, Any]]:
+        script = """
+            const clean = (v) => (v || '').replace(/\\s+/g, ' ').trim();
+            const txt = (n) => clean(n ? (n.innerText || n.textContent || '') : '');
+            const dateRe = /(\\d{1,2})\\.(\\d{1,2})\\.(\\d{4})/;
+            const timeRe = /\\b(\\d{1,2}:\\d{2})\\b/;
+            const agRe = /\\bAG\\s+\\S[^\\n\\r]*/;
+
+            const containers = Array.from(document.querySelectorAll('widgets-container'));
+            const container = containers.find(c => c.textContent.includes('Kommende Termine'));
+            if (!container) return [];
+
+            // Flatten DOM into a linear sequence of date-header / event-column records.
+            const elements = [];
+            function collect(node) {
+                if (!node || node.nodeType !== 1) return;
+                if (node.tagName === 'STRONG') {
+                    const t = txt(node);
+                    if (dateRe.test(t)) {
+                        elements.push({ type: 'date', text: t });
+                        return;
+                    }
+                }
+                if (node.classList && node.classList.contains('col-2')) {
+                    elements.push({ type: 'event', text: txt(node) });
+                    return;
+                }
+                node.childNodes.forEach(collect);
+            }
+            container.childNodes.forEach(collect);
+
+            // Group events by the date header that precedes them.
+            const results = [];
+            let currentDate = null;
+            let currentEntries = [];
+
+            function flush() {
+                if (currentDate && currentEntries.length > 0) {
+                    results.push({ raw_date: currentDate, entries: currentEntries.slice() });
+                }
+            }
+
+            elements.forEach(el => {
+                if (el.type === 'date') {
+                    flush();
+                    currentDate = el.text.match(dateRe)[0];
+                    currentEntries = [];
+                } else if (el.type === 'event' && currentDate) {
+                    const t = el.text;
+                    if (!t.includes('AG ')) return;
+                    const agMatch = t.match(agRe);
+                    if (!agMatch) return;
+                    const timeMatch = t.match(timeRe);
+                    const time = timeMatch ? timeMatch[1] : '';
+                    currentEntries.push(time ? `${time} ${clean(agMatch[0])}` : clean(agMatch[0]));
+                }
+            });
+            flush();
+
+            return results;
+        """
+        try:
+            raw = driver.execute_script(script)
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Activities DOM script failed; returning empty list", exc_info=True)
+            return []
+
+        if not isinstance(raw, list):
+            return []
+
+        output: list[dict[str, Any]] = []
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            raw_date = str(item.get("raw_date") or "").strip()
+            entries = [str(e) for e in (item.get("entries") or []) if str(e).strip()]
+            if not raw_date or not entries:
+                continue
+            try:
+                output.append({"date": self._ddmmyyyy_to_iso(raw_date), "entries": entries})
+            except ValueError:
+                _LOGGER.debug("Activities: could not parse date %r", raw_date)
+
+        _LOGGER.debug("Collected %s activity entries via DOM", len(output))
+        return output
+
+    def _collect_activities_html(self, html: str) -> list[dict[str, Any]]:
+        """Legacy HTML-string fallback for _collect_activities (used when no driver is available)."""
         html = html.split("Kommende Termine", 1)[1]
         html = html.split("</widgets-container>", 1)[0]
         days = html.split("<strong ")
@@ -841,20 +941,10 @@ class SchulmanagerClient:
                     if "AG " not in entity:
                         continue
                     entries.append(f"{event_time} {entity[13:]}")
-                output.append(
-                    {
-                        "date": self._ddmmyyyy_to_iso(raw_date),
-                        "entries": entries,
-                    }
-                )
+                output.append({"date": self._ddmmyyyy_to_iso(raw_date), "entries": entries})
             except (IndexError, ValueError):
-                _LOGGER.debug("Could not parse activity block", exc_info=True)
-
-        today_str = date.today().isoformat()
-        return {
-            "items": output,
-            "today": [item for item in output if item["date"] == today_str],
-        }
+                _LOGGER.debug("Could not parse activity block (HTML fallback)", exc_info=True)
+        return output
 
     def _collect_schedules(self, driver: WebDriver, start_date: str = "", debug: bool = False) -> dict[str, Any]:
         driver.get(SCHEDULE_URL + start_date)

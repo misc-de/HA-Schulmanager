@@ -1,0 +1,41 @@
+name: Release
+
+# Triggered by pushing a version tag, e.g.: git tag v0.3.28 && git push --tags
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write  # needed to create GitHub Releases
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag (strips leading 'v')
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify manifest.json matches tag
+        run: |
+          MANIFEST=$(jq -r .version custom_components/schulmanager/manifest.json)
+          TAG="${{ steps.version.outputs.version }}"
+          if [ "$MANIFEST" != "$TAG" ]; then
+            echo "::error::manifest.json version ($MANIFEST) does not match tag ($TAG)."
+            echo "::error::Run: python scripts/bump_version.py $TAG, commit, then re-tag."
+            exit 1
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "v${{ steps.version.outputs.version }}"
+          generate_release_notes: true
+          make_latest: true

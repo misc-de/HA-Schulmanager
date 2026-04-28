@@ -2,15 +2,15 @@
   "domain": "schulmanager",
   "name": "Schulmanager",
   "codeowners": [
-    "@openai"
+    "@misc-de"
   ],
   "config_flow": true,
   "dependencies": [
     "frontend",
     "http"
   ],
-  "documentation": "https://github.com/SchmueI/Schulmanager-API",
+  "documentation": "https://github.com/misc-de/HA-Schulmanager",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "version": "0.3.27"
+  "version": "0.3.29"
 }
