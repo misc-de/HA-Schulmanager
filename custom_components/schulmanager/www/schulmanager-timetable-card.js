@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.3.31";
+const CARD_VERSION = "0.3.32";
 const DAYS = [
   ["monday", "Mo"],
   ["tuesday", "Di"],
@@ -69,18 +69,26 @@ const getLessonTime = (lesson) => {
   return `${minutesToTime(start)}-${minutesToTime(start + 45)}`;
 };
 
-const getPauseRow = (lesson) => {
+const getPauseRow = (lesson, isToday) => {
   const n = Number(lesson);
-  if (n === 2) {
-    return '<tr class="pause-row"><td class="pause-time">09:30-09:45</td><td colspan="5">Pause · 15 Minuten</td></tr>';
-  }
-  if (n === 4) {
-    return '<tr class="pause-row"><td class="pause-time">11:15-11:35</td><td colspan="5">Pause · 20 Minuten</td></tr>';
-  }
-  if (n === 6) {
-    return '<tr class="pause-row"><td class="pause-time">13:05-13:15</td><td colspan="5">Pause · 10 Minuten</td></tr>';
-  }
-  return "";
+  let time = "";
+  let label = "";
+  if (n === 2) { time = "09:30-09:45"; label = "Pause · 15 Min"; }
+  else if (n === 4) { time = "11:15-11:35"; label = "Pause · 20 Min"; }
+  else if (n === 6) { time = "13:05-13:15"; label = "Pause · 10 Min"; }
+  else return "";
+
+  const todayIndex = DAYS.findIndex(([key]) => isToday(key));
+  const labelIndex = todayIndex >= 0 ? todayIndex : 0;
+
+  const cells = DAYS.map(([key], i) => {
+    const colClass = `day-col-${i % 2}`;
+    const todayClass = isToday(key) ? " is-today" : "";
+    const labelClass = i === labelIndex ? " pause-label" : "";
+    return `<td class="${colClass}${todayClass}${labelClass}">${i === labelIndex ? label : ""}</td>`;
+  }).join("");
+
+  return `<tr class="pause-row"><td class="pause-time">${time}</td>${cells}</tr>`;
 };
 
 const formatDate = (isoDate) => {
@@ -297,7 +305,7 @@ class SchulmanagerTimetableCard extends HTMLElement {
             </td>
             ${cells}
           </tr>
-        ${getPauseRow(lesson)}`;
+        ${getPauseRow(lesson, isToday)}`;
       })
       .join("");
 
@@ -430,13 +438,11 @@ class SchulmanagerTimetableCard extends HTMLElement {
         .timetable th.is-today {
           position: relative;
           z-index: 2;
-          background: rgba(var(--rgb-primary-color), 0.20);
+          background: rgba(var(--rgb-primary-color), 0.18);
           box-shadow:
-            inset 3px 0 0 rgba(var(--rgb-primary-color), 0.65),
-            inset -3px 0 0 rgba(var(--rgb-primary-color), 0.65),
-            inset 0 3px 0 rgba(var(--rgb-primary-color), 0.65),
-            inset 8px 0 18px -8px rgba(var(--rgb-primary-color), 0.30),
-            inset -8px 0 18px -8px rgba(var(--rgb-primary-color), 0.30);
+            inset 0 3px 0 rgba(var(--rgb-primary-color), 0.55),
+            inset 14px 0 26px -10px rgba(var(--rgb-primary-color), 0.45),
+            inset -14px 0 26px -10px rgba(var(--rgb-primary-color), 0.45);
         }
 
         .timetable td {
@@ -466,19 +472,15 @@ class SchulmanagerTimetableCard extends HTMLElement {
           z-index: 2;
           background: rgba(var(--rgb-primary-color), 0.12);
           box-shadow:
-            inset 3px 0 0 rgba(var(--rgb-primary-color), 0.55),
-            inset -3px 0 0 rgba(var(--rgb-primary-color), 0.55),
-            inset 8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25),
-            inset -8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25);
+            inset 14px 0 26px -10px rgba(var(--rgb-primary-color), 0.38),
+            inset -14px 0 26px -10px rgba(var(--rgb-primary-color), 0.38);
         }
 
         .timetable tr:last-child td.is-today {
           box-shadow:
-            inset 3px 0 0 rgba(var(--rgb-primary-color), 0.55),
-            inset -3px 0 0 rgba(var(--rgb-primary-color), 0.55),
-            inset 0 -3px 0 rgba(var(--rgb-primary-color), 0.65),
-            inset 8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25),
-            inset -8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25);
+            inset 0 -4px 10px -4px rgba(var(--rgb-primary-color), 0.50),
+            inset 14px 0 26px -10px rgba(var(--rgb-primary-color), 0.38),
+            inset -14px 0 26px -10px rgba(var(--rgb-primary-color), 0.38);
         }
 
         .timetable tr:last-child td {
@@ -650,9 +652,16 @@ class SchulmanagerTimetableCard extends HTMLElement {
           opacity: 0.82;
         }
 
-        .pause-row td:last-child {
-          text-align: left;
+        .pause-row td.pause-label {
           font-style: italic;
+        }
+
+        .pause-row td.is-today {
+          background: rgba(var(--rgb-primary-color), 0.14);
+          box-shadow:
+            inset 14px 0 26px -10px rgba(var(--rgb-primary-color), 0.38),
+            inset -14px 0 26px -10px rgba(var(--rgb-primary-color), 0.38);
+          opacity: 1;
         }
 
         .pause-time {
