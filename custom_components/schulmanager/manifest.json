@@ -12,5 +12,5 @@
   "documentation": "https://github.com/misc-de/HA-Schulmanager",
   "integration_type": "service",
   "iot_class": "cloud_polling",
-  "version": "0.3.31"
+  "version": "0.3.32"
 }
