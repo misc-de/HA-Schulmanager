@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.3.33";
+const CARD_VERSION = "0.3.34";
 const DAYS = [
   ["monday", "Mo"],
   ["tuesday", "Di"],
@@ -440,9 +440,10 @@ class SchulmanagerTimetableCard extends HTMLElement {
           z-index: 2;
           background: rgba(var(--rgb-primary-color), 0.18);
           border-top: 2px solid rgba(var(--rgb-primary-color), 0.55);
+          clip-path: inset(-3px -28px 0 -28px);
           box-shadow:
-            8px 0 18px rgba(var(--rgb-primary-color), 0.40),
-            -8px 0 18px rgba(var(--rgb-primary-color), 0.40);
+            10px 0 18px rgba(var(--rgb-primary-color), 0.40),
+            -10px 0 18px rgba(var(--rgb-primary-color), 0.40);
         }
 
         .timetable td {
@@ -471,16 +472,18 @@ class SchulmanagerTimetableCard extends HTMLElement {
           position: relative;
           z-index: 2;
           background: rgba(var(--rgb-primary-color), 0.12);
+          clip-path: inset(0 -28px);
           box-shadow:
-            8px 0 18px rgba(var(--rgb-primary-color), 0.30),
-            -8px 0 18px rgba(var(--rgb-primary-color), 0.30);
+            10px 0 18px rgba(var(--rgb-primary-color), 0.30),
+            -10px 0 18px rgba(var(--rgb-primary-color), 0.30);
         }
 
         .timetable tr:last-child td.is-today {
           border-bottom: 2px solid rgba(var(--rgb-primary-color), 0.55);
+          clip-path: inset(0 -28px 3px -28px);
           box-shadow:
-            8px 0 18px rgba(var(--rgb-primary-color), 0.30),
-            -8px 0 18px rgba(var(--rgb-primary-color), 0.30);
+            10px 0 18px rgba(var(--rgb-primary-color), 0.30),
+            -10px 0 18px rgba(var(--rgb-primary-color), 0.30);
         }
 
         .timetable tr:last-child td {
@@ -658,9 +661,10 @@ class SchulmanagerTimetableCard extends HTMLElement {
 
         .pause-row td.is-today {
           background: rgba(var(--rgb-primary-color), 0.14);
+          clip-path: inset(0 -28px);
           box-shadow:
-            8px 0 18px rgba(var(--rgb-primary-color), 0.30),
-            -8px 0 18px rgba(var(--rgb-primary-color), 0.30);
+            10px 0 18px rgba(var(--rgb-primary-color), 0.30),
+            -10px 0 18px rgba(var(--rgb-primary-color), 0.30);
           opacity: 1;
         }
 
