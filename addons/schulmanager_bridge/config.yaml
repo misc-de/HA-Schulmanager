@@ -1,5 +1,5 @@
 name: "Schulmanager Bridge"
-version: "0.3.32"
+version: "0.3.33"
 slug: "schulmanager_bridge"
 description: "Lokale Bridge fuer die Schulmanager Home-Assistant-Integration"
 url: "https://github.com/SchmueI/Schulmanager-API"
