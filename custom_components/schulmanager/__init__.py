@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.34"
+INTEGRATION_BUILD = "0.3.35"
 
 import logging
 from pathlib import Path
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.const import EVENT_HOMEASSISTANT_STARTED
+from homeassistant.core import Event, HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.helpers import config_validation as cv
@@ -48,7 +49,13 @@ FRONTEND_CARD_URL = f"{FRONTEND_URL}/schulmanager-timetable-card.js?v={INTEGRATI
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up Schulmanager from yaml."""
     hass.data.setdefault(DOMAIN, {})
-    await _async_register_frontend(hass)
+
+    await _async_register_static_path(hass)
+
+    async def _on_homeassistant_started(event: Event) -> None:
+        await _async_register_lovelace_resource_once(hass)
+
+    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STARTED, _on_homeassistant_started)
 
     async def _async_handle_refresh_service(call: ServiceCall) -> None:
         entry_id = call.data.get("entry_id")
@@ -93,19 +100,26 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     return True
 
 
-async def _async_register_frontend(hass: HomeAssistant) -> None:
-    """Expose Schulmanager frontend assets."""
+async def _async_register_static_path(hass: HomeAssistant) -> None:
+    """Register the static HTTP path for Schulmanager frontend assets."""
     domain_data = hass.data.setdefault(DOMAIN, {})
-    if domain_data.get("frontend_registered"):
+    if domain_data.get("static_path_registered"):
         return
-
     if hasattr(hass.http, "async_register_static_paths") and StaticPathConfig is not None:
         await hass.http.async_register_static_paths(
             [StaticPathConfig(FRONTEND_URL, str(FRONTEND_DIR), True)]
         )
     else:
         hass.http.register_static_path(FRONTEND_URL, str(FRONTEND_DIR), True)
+    domain_data["static_path_registered"] = True
+    _LOGGER.info("Registered Schulmanager static path at %s", FRONTEND_URL)
 
+
+async def _async_register_lovelace_resource_once(hass: HomeAssistant) -> None:
+    """Register the card JS in Lovelace – called after HA is fully started."""
+    domain_data = hass.data.setdefault(DOMAIN, {})
+    if domain_data.get("lovelace_resource_registered"):
+        return
     registered = await _async_add_lovelace_resource(hass, FRONTEND_CARD_URL)
     if not registered and add_extra_js_url is not None:
         add_extra_js_url(hass, FRONTEND_CARD_URL)
@@ -116,9 +130,7 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
             "Add manually via Settings → Dashboards → Resources: %s (type: module)",
             FRONTEND_CARD_URL,
         )
-
-    domain_data["frontend_registered"] = True
-    _LOGGER.info("Registered Schulmanager frontend assets at %s", FRONTEND_URL)
+    domain_data["lovelace_resource_registered"] = True
 
 
 async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
