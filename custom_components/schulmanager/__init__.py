@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.30"
+INTEGRATION_BUILD = "0.3.31"
 
 import logging
 from pathlib import Path
@@ -106,17 +106,41 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
     else:
         hass.http.register_static_path(FRONTEND_URL, str(FRONTEND_DIR), True)
 
-    if add_extra_js_url is not None:
+    registered = await _async_add_lovelace_resource(hass, FRONTEND_CARD_URL)
+    if not registered and add_extra_js_url is not None:
         add_extra_js_url(hass, FRONTEND_CARD_URL)
-        _LOGGER.info("Registered Schulmanager frontend module %s", FRONTEND_CARD_URL)
-    else:
+        _LOGGER.info("Registered Schulmanager frontend module via add_extra_js_url: %s", FRONTEND_CARD_URL)
+    elif not registered:
         _LOGGER.warning(
-            "Home Assistant frontend module registration is not available; add %s manually as a dashboard resource.",
+            "Could not register Lovelace resource automatically. "
+            "Add manually via Settings → Dashboards → Resources: %s (type: module)",
             FRONTEND_CARD_URL,
         )
 
     domain_data["frontend_registered"] = True
     _LOGGER.info("Registered Schulmanager frontend assets at %s", FRONTEND_URL)
+
+
+async def _async_add_lovelace_resource(hass: HomeAssistant, url: str) -> bool:
+    """Register the card JS in Lovelace resource storage (storage-mode dashboards only)."""
+    try:
+        lovelace_data = hass.data.get("lovelace")
+        if lovelace_data is None:
+            return False
+        resources = getattr(lovelace_data, "resources", None)
+        if resources is None or not callable(getattr(resources, "async_items", None)):
+            return False
+        base_url = url.split("?")[0]
+        for item in resources.async_items():
+            if item.get("url", "").split("?")[0] == base_url:
+                _LOGGER.debug("Lovelace resource already registered: %s", base_url)
+                return True
+        await resources.async_create_item({"res_type": "module", "url": url})
+        _LOGGER.info("Registered Lovelace resource: %s", url)
+        return True
+    except Exception as err:  # noqa: BLE001
+        _LOGGER.debug("Could not register Lovelace resource: %s", err)
+        return False
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

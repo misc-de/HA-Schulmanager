@@ -56,6 +56,11 @@ FILES = [
         r'HomeAssistant-Schulmanager-Bridge/[0-9]+\.[0-9]+\.[0-9]+',
         'HomeAssistant-Schulmanager-Bridge/{version}',
     ),
+    (
+        ROOT / "custom_components/schulmanager/www/schulmanager-timetable-card.js",
+        r'const CARD_VERSION = "[0-9]+\.[0-9]+\.[0-9]+"',
+        'const CARD_VERSION = "{version}"',
+    ),
 ]
 
 
