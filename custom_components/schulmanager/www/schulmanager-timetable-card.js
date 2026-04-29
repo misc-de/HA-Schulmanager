@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.3.27";
+const CARD_VERSION = "0.3.31";
 const DAYS = [
   ["monday", "Mo"],
   ["tuesday", "Di"],
@@ -406,7 +406,7 @@ class SchulmanagerTimetableCard extends HTMLElement {
 
         .day-header {
           display: flex;
-          align-items: baseline;
+          align-items: center;
           justify-content: space-between;
           gap: 8px;
           min-width: 0;
@@ -429,8 +429,14 @@ class SchulmanagerTimetableCard extends HTMLElement {
 
         .timetable th.is-today {
           position: relative;
-          box-shadow: inset 0 -2px 0 rgba(var(--rgb-primary-color), 0.5);
-          z-index: 1;
+          z-index: 2;
+          background: rgba(var(--rgb-primary-color), 0.20);
+          box-shadow:
+            inset 3px 0 0 rgba(var(--rgb-primary-color), 0.65),
+            inset -3px 0 0 rgba(var(--rgb-primary-color), 0.65),
+            inset 0 3px 0 rgba(var(--rgb-primary-color), 0.65),
+            inset 8px 0 18px -8px rgba(var(--rgb-primary-color), 0.30),
+            inset -8px 0 18px -8px rgba(var(--rgb-primary-color), 0.30);
         }
 
         .timetable td {
@@ -457,9 +463,22 @@ class SchulmanagerTimetableCard extends HTMLElement {
 
         .timetable td.is-today {
           position: relative;
-          box-shadow: inset 6px 0 10px -10px rgba(var(--rgb-primary-color), 0.75),
-                      inset -6px 0 10px -10px rgba(var(--rgb-primary-color), 0.75);
-          z-index: 1;
+          z-index: 2;
+          background: rgba(var(--rgb-primary-color), 0.12);
+          box-shadow:
+            inset 3px 0 0 rgba(var(--rgb-primary-color), 0.55),
+            inset -3px 0 0 rgba(var(--rgb-primary-color), 0.55),
+            inset 8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25),
+            inset -8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25);
+        }
+
+        .timetable tr:last-child td.is-today {
+          box-shadow:
+            inset 3px 0 0 rgba(var(--rgb-primary-color), 0.55),
+            inset -3px 0 0 rgba(var(--rgb-primary-color), 0.55),
+            inset 0 -3px 0 rgba(var(--rgb-primary-color), 0.65),
+            inset 8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25),
+            inset -8px 0 18px -8px rgba(var(--rgb-primary-color), 0.25);
         }
 
         .timetable tr:last-child td {
@@ -483,7 +502,7 @@ class SchulmanagerTimetableCard extends HTMLElement {
         .timetable th.lesson-col {
           color: var(--primary-color);
           background: rgba(var(--rgb-primary-color), 0.10);
-          vertical-align: middle;
+          vertical-align: top;
         }
 
         .lesson-number {
