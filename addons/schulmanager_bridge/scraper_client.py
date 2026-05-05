@@ -265,7 +265,7 @@ class SchulmanagerClient:
         options.add_argument("--remote-debugging-port=0")
         options.add_argument(f"--user-data-dir={user_data_dir}")
         options.add_argument(
-            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.34 (+addon bridge)"
+            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.36 (+addon bridge)"
         )
         return options
 

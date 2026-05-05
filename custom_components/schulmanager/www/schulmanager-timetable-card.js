@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.3.35";
+const CARD_VERSION = "0.3.36";
 const DAYS = [
   ["monday", "Mo"],
   ["tuesday", "Di"],
@@ -442,8 +442,8 @@ class SchulmanagerTimetableCard extends HTMLElement {
           border-top: 2px solid rgba(var(--rgb-primary-color), 0.55);
           clip-path: inset(-3px -28px 0 -28px);
           box-shadow:
-            10px 0 18px rgba(var(--rgb-primary-color), 0.40),
-            -10px 0 18px rgba(var(--rgb-primary-color), 0.40);
+            5px 0 9px rgba(var(--rgb-primary-text-color), 0.20),
+            -5px 0 9px rgba(var(--rgb-primary-text-color), 0.20);
         }
 
         .timetable td {
@@ -474,16 +474,16 @@ class SchulmanagerTimetableCard extends HTMLElement {
           background: rgba(var(--rgb-primary-color), 0.12);
           clip-path: inset(0 -28px);
           box-shadow:
-            10px 0 18px rgba(var(--rgb-primary-color), 0.30),
-            -10px 0 18px rgba(var(--rgb-primary-color), 0.30);
+            5px 0 9px rgba(var(--rgb-primary-text-color), 0.15),
+            -5px 0 9px rgba(var(--rgb-primary-text-color), 0.15);
         }
 
         .timetable tr:last-child td.is-today {
           border-bottom: 2px solid rgba(var(--rgb-primary-color), 0.55);
           clip-path: inset(0 -28px 3px -28px);
           box-shadow:
-            10px 0 18px rgba(var(--rgb-primary-color), 0.30),
-            -10px 0 18px rgba(var(--rgb-primary-color), 0.30);
+            5px 0 9px rgba(var(--rgb-primary-text-color), 0.15),
+            -5px 0 9px rgba(var(--rgb-primary-text-color), 0.15);
         }
 
         .timetable tr:last-child td {
@@ -663,8 +663,8 @@ class SchulmanagerTimetableCard extends HTMLElement {
           background: rgba(var(--rgb-primary-color), 0.14);
           clip-path: inset(0 -28px);
           box-shadow:
-            10px 0 18px rgba(var(--rgb-primary-color), 0.30),
-            -10px 0 18px rgba(var(--rgb-primary-color), 0.30);
+            5px 0 9px rgba(var(--rgb-primary-text-color), 0.15),
+            -5px 0 9px rgba(var(--rgb-primary-text-color), 0.15);
           opacity: 1;
         }
 
