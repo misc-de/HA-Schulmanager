@@ -4,7 +4,7 @@ Eine benutzerdefinierte Home-Assistant-Integration für **Schulmanager Online**
 mit lokalem Bridge-Add-on.
 
 ⚠️ **KI-unterstütztes Projekt**  
-⚠️ **In aktiver Entwicklung**  
+
 Dieses Projekt wird aktiv weiterentwickelt. Funktionen können sich ändern und
 Instabilitäten sind möglich.
 
