@@ -32,6 +32,11 @@ FILES = [
         'INTEGRATION_BUILD = "{version}"',
     ),
     (
+        ROOT / "custom_components/schulmanager/config_flow.py",
+        r'BUILD_ID = "[^"]+"',
+        'BUILD_ID = "{version}"',
+    ),
+    (
         ROOT / "addons/schulmanager_bridge/config.yaml",
         r'^version: "[^"]+"',
         'version: "{version}"',

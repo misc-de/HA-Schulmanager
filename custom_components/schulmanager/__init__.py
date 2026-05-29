@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-INTEGRATION_BUILD = "0.3.36"
-
 import logging
 from pathlib import Path
 
@@ -38,6 +36,8 @@ from .const import (
 from .coordinator import SchulmanagerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
+
+INTEGRATION_BUILD = "0.3.36"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_SCHEMA = vol.Schema({vol.Optional("entry_id"): cv.string})
@@ -160,7 +160,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     bridge_url = entry.options.get(CONF_BRIDGE_URL, DEFAULT_BRIDGE_URL)
-    _LOGGER.warning("Setting up Schulmanager integration build %s", INTEGRATION_BUILD)
+    _LOGGER.debug("Setting up Schulmanager integration build %s", INTEGRATION_BUILD)
     _LOGGER.info(
         "Setting up Schulmanager entry '%s' via bridge %s",
         entry.title or entry.entry_id,

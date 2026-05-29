@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-BUILD_ID = "0.3.27-optionsflow"
-
 from typing import Any
 from urllib.parse import urlparse
 
@@ -11,9 +9,9 @@ import logging
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import ConfigFlowResult
 from homeassistant.core import callback
 from homeassistant.core import HomeAssistant
-from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -32,8 +30,10 @@ from .const import (
     MODULE_OPTIONS,
 )
 
+BUILD_ID = "0.3.36"
+
 _LOGGER = logging.getLogger(__name__)
-_LOGGER.warning("Loaded Schulmanager config flow build %s", BUILD_ID)
+_LOGGER.debug("Loaded Schulmanager config flow build %s", BUILD_ID)
 
 
 def _default_bridge_url(hass: HomeAssistant) -> str:
@@ -106,10 +106,10 @@ class SchulmanagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> "SchulmanagerOptionsFlowHandler":
         """Create the options flow."""
-        _LOGGER.warning("Creating Schulmanager options flow build %s", BUILD_ID)
+        _LOGGER.debug("Creating Schulmanager options flow build %s", BUILD_ID)
         return SchulmanagerOptionsFlowHandler()
 
-    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
 
         if user_input is not None:
@@ -148,7 +148,7 @@ class SchulmanagerConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
+    ) -> ConfigFlowResult:
         entry = self._get_reconfigure_entry()
         errors: dict[str, str] = {}
 
@@ -258,9 +258,9 @@ class SchulmanagerOptionsFlowHandler(config_entries.OptionsFlow):
 
     def __init__(self) -> None:
         """Initialize options flow."""
-        _LOGGER.warning("Initializing SchulmanagerOptionsFlowHandler build %s", BUILD_ID)
+        _LOGGER.debug("Initializing SchulmanagerOptionsFlowHandler build %s", BUILD_ID)
 
-    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> FlowResult:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
             _LOGGER.info("Schulmanager options updated for %s", self.config_entry.title)
             return self.async_create_entry(title="", data=user_input)
