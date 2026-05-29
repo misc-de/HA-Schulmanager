@@ -207,8 +207,11 @@ data:
 
 - Port `8099` nicht öffentlich ins Internet freigeben.
 - Die Bridge nur im lokalen Netzwerk betreiben.
-- Das optionale gemeinsame Secret nutzen, wenn der Bridge-Zugriff zusätzlich
-  geschützt werden soll.
+- **Gemeinsames Secret dringend empfohlen:** Ohne gesetztes `bridge_secret`
+  nimmt die Bridge Anfragen ungeprüft entgegen. Die Anmeldedaten werden bei
+  jedem Abruf unverschlüsselt (HTTP) an die Bridge übertragen – im lokalen Netz
+  üblich, aber das Secret verhindert, dass andere Geräte im selben Netz die
+  Bridge ansprechen können.
 - Ausführliches Debug-Logging nicht dauerhaft aktiviert lassen.
 
 ## Dashboard-Cards

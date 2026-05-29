@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 import html as html_utils
 import logging
 import os
@@ -144,7 +144,7 @@ class SchulmanagerClient:
             self._login(driver)
             data: dict[str, Any] = {
                 "meta": {
-                    "fetched_at": datetime.utcnow().isoformat() + "Z",
+                    "fetched_at": datetime.now(timezone.utc).isoformat(),
                     "modules": modules,
                     "module_errors": {},
                 }
