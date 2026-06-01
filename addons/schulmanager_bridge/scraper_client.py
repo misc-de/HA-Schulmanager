@@ -451,10 +451,15 @@ class SchulmanagerClient:
             driver.quit()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Driver quit failed", exc_info=True)
-        # Only throwaway profiles are deleted; persistent ones keep the session.
-        if getattr(driver, "_schulmanager_ephemeral_profile", True):
+        # Throwaway profiles are always removed; a persistent profile is removed
+        # only when login flagged it as broken, so the next run logs in fresh.
+        ephemeral = getattr(driver, "_schulmanager_ephemeral_profile", True)
+        reset = getattr(driver, "_schulmanager_reset_profile", False)
+        if ephemeral or reset:
             user_data_dir = getattr(driver, "_schulmanager_user_data_dir", None)
             if isinstance(user_data_dir, str):
+                if reset and not ephemeral:
+                    _LOGGER.info("Resetting persistent browser profile after a failed login")
                 shutil.rmtree(user_data_dir, ignore_errors=True)
         log_path = getattr(driver, "_schulmanager_chromedriver_log", None)
         if isinstance(log_path, str):
@@ -476,23 +481,27 @@ class SchulmanagerClient:
         _LOGGER.debug("Opening Schulmanager login page")
         driver.get(LOGIN_URL)
 
+        # A persistent session lands on the dashboard, a fresh profile shows the
+        # login form. Wait for whichever renders first instead of assuming the
+        # session is gone after a short timeout — a slow dashboard render would
+        # otherwise be misread as "login form could not be loaded".
         try:
-            WebDriverWait(driver, 7).until(
-                EC.presence_of_element_located((By.TAG_NAME, "widgets-container"))
-            )
-            _LOGGER.debug("Existing Schulmanager session is already active")
-            return
-        except TimeoutException:
-            pass
-
-        try:
-            WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.ID, "emailOrUsername"))
+            WebDriverWait(driver, 25).until(
+                EC.any_of(
+                    EC.presence_of_element_located((By.TAG_NAME, "widgets-container")),
+                    EC.presence_of_element_located((By.ID, "emailOrUsername")),
+                )
             )
         except TimeoutException as err:
-            raise SchulmanagerConnectionError(
-                "Login form could not be loaded."
-            ) from err
+            # Neither state rendered: stale session, slow network, or a block
+            # page. Drop the (possibly corrupt) persistent profile so the next
+            # run starts clean, and report what the page actually showed.
+            setattr(driver, "_schulmanager_reset_profile", True)
+            raise SchulmanagerConnectionError(self._describe_login_failure(driver)) from err
+
+        if driver.find_elements(By.TAG_NAME, "widgets-container"):
+            _LOGGER.debug("Existing Schulmanager session is already active")
+            return
 
         _LOGGER.debug("Submitting Schulmanager credentials")
         driver.find_element(By.ID, "emailOrUsername").clear()
@@ -513,6 +522,32 @@ class SchulmanagerClient:
                 page_excerpt,
             )
             raise SchulmanagerAuthError("Authentication failed.") from err
+
+    def _describe_login_failure(self, driver: WebDriver) -> str:
+        """Build a diagnostic message when neither dashboard nor login form loads."""
+        try:
+            url = driver.current_url
+        except WebDriverException:
+            url = "<unknown>"
+        try:
+            title = driver.title
+        except WebDriverException:
+            title = "<unknown>"
+        try:
+            excerpt = self._strip_tags(driver.page_source)[:300]
+        except WebDriverException:
+            excerpt = ""
+        _LOGGER.warning(
+            "Login page showed neither dashboard nor login form; url=%s title=%r excerpt=%s",
+            url,
+            title,
+            excerpt,
+        )
+        return (
+            f"Login form could not be loaded (url={url}, title={title!r}). "
+            "Page showed neither the dashboard nor the login form — "
+            "likely a server block, captcha, or slow network."
+        )
 
     def _load_dashboard(self, driver: WebDriver) -> None:
         _LOGGER.debug("Opening Schulmanager dashboard")
