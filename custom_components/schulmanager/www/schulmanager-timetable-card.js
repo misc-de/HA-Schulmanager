@@ -1,4 +1,4 @@
-const CARD_VERSION = "0.3.36";
+const CARD_VERSION = "0.3.37";
 const DAYS = [
   ["monday", "Mo"],
   ["tuesday", "Di"],
