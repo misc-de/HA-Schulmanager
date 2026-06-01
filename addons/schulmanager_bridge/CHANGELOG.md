@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.39
+- Fix: Persistente Session konnte „Login form could not be loaded" (502) auslösen, wenn das Dashboard nach Kaltstart langsam rendert. Der Login wartet jetzt auf Dashboard **oder** Login-Formular (je nachdem, was zuerst erscheint), statt eine aktive Session nach kurzem Timeout fälschlich zu verwerfen
+- Ein defektes persistentes Profil wird nach fehlgeschlagenem Login automatisch zurückgesetzt, sodass der nächste Abruf sauber neu einloggt
+- Bessere Diagnose: Bei fehlgeschlagenem Login werden URL, Seitentitel und ein Seitenauszug geloggt (hilft, Server-Block/Captcha von langsamer Ladezeit zu unterscheiden)
+
 ## 0.3.38
 - Persistente Browser-Session: Die Bridge meldet sich nicht mehr bei jedem Abruf neu mit Benutzername + Passwort an, sondern hält die Schulmanager-Session (Cookies + Token) in einem dauerhaften Chromium-Profil pro Benutzer. Folge-Abrufe überspringen den Login komplett – deutlich weniger Login-Traffic und geringeres Block-Risiko
 - Login-Validierung nutzt weiterhin ein Wegwerf-Profil (kein dauerhafter State, keine Konflikte mit laufenden Abrufen)
