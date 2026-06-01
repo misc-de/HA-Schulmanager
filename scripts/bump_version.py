@@ -19,6 +19,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).parent.parent
 
+CHANGELOG = ROOT / "addons/schulmanager_bridge/CHANGELOG.md"
+
 FILES = [
     # (path, regex-pattern, replacement-template)
     (
@@ -105,6 +107,14 @@ def bump(version: str) -> None:
     print(f"\nBumped to v{version} in:")
     for f in sorted(set(changed)):
         print(f"  {f}")
+
+    if CHANGELOG.exists() and f"## {version}" not in CHANGELOG.read_text():
+        print(
+            f"\n  ⚠️  CHANGELOG missing an entry for {version}!\n"
+            f"      Add a '## {version}' section to "
+            f"{CHANGELOG.relative_to(ROOT)} before releasing."
+        )
+
     print(f"""
 Next steps:
   git add -A
