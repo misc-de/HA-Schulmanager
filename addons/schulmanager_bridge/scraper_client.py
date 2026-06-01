@@ -7,6 +7,7 @@ from datetime import date, datetime, timedelta, timezone
 import html as html_utils
 import logging
 import os
+import random
 import re
 import shutil
 import tempfile
@@ -43,6 +44,41 @@ CALENDAR_URL = "https://login.schulmanager-online.de/#/modules/calendar/overview
 SCHEDULE_URL = "https://login.schulmanager-online.de/#/modules/schedules/view//"
 HOMEWORK_MAX_AGE_DAYS = 14
 GERMAN_DATE_PATTERN = re.compile(r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{2,4})")
+
+# Realistic desktop browser identities. The Chromium *version* is taken from the
+# real engine at runtime (so it always matches the actual JS feature set); only
+# the *platform* identity below is rotated per session. User-Agent string,
+# Sec-CH-UA client hints and navigator.platform are applied together via CDP so
+# they can never contradict each other (a mismatch is itself a bot signal).
+_UA_PROFILES: tuple[dict[str, str], ...] = (
+    {
+        "ua_platform": "Windows NT 10.0; Win64; x64",
+        "ch_platform": "Windows",
+        "ch_platform_version": "15.0.0",  # Windows 11 (23H2/24H2)
+        "nav_platform": "Win32",
+    },
+    {
+        "ua_platform": "Windows NT 10.0; Win64; x64",
+        "ch_platform": "Windows",
+        "ch_platform_version": "10.0.0",  # Windows 10
+        "nav_platform": "Win32",
+    },
+    {
+        "ua_platform": "Macintosh; Intel Mac OS X 10_15_7",
+        "ch_platform": "macOS",
+        "ch_platform_version": "14.5.0",
+        "nav_platform": "MacIntel",
+    },
+    {
+        "ua_platform": "X11; Linux x86_64",
+        "ch_platform": "Linux",
+        "ch_platform_version": "",
+        "nav_platform": "Linux x86_64",
+    },
+)
+# Only used if the real engine version cannot be read from navigator.userAgent.
+_FALLBACK_CHROME_VERSION = "133.0.6943.98"
+_CHROME_VERSION_PATTERN = re.compile(r"(?:Headless)?Chrome/(\d+\.\d+\.\d+\.\d+)")
 
 
 class SchulmanagerError(Exception):
@@ -218,6 +254,7 @@ class SchulmanagerClient:
                 driver = webdriver.Chrome(service=service, options=options)
                 setattr(driver, "_schulmanager_user_data_dir", user_data_dir)
                 setattr(driver, "_schulmanager_chromedriver_log", log_path)
+                self._apply_stealth_user_agent(driver)
                 _LOGGER.debug("Local Chromium webdriver created successfully")
                 return driver
             except WebDriverException as err:
@@ -264,10 +301,76 @@ class SchulmanagerClient:
         options.add_argument("--no-zygote")
         options.add_argument("--remote-debugging-port=0")
         options.add_argument(f"--user-data-dir={user_data_dir}")
-        options.add_argument(
-            "user-agent=HomeAssistant-Schulmanager-Bridge/0.3.36 (+addon bridge)"
-        )
+        # Reduce the "this is automation" surface; the realistic user-agent is
+        # applied at runtime via CDP in _apply_stealth_user_agent().
+        options.add_argument("--disable-blink-features=AutomationControlled")
+        options.add_argument("--lang=de-DE")
         return options
+
+    def _apply_stealth_user_agent(self, driver: WebDriver) -> None:
+        """Give the headless browser a realistic, self-consistent identity.
+
+        The real Chromium engine version is reused so the reported version always
+        matches the actual JS feature set, while the platform identity is rotated
+        per session from ``_UA_PROFILES``. User-Agent string, Sec-CH-UA client
+        hints and navigator.platform are set together via CDP so they never
+        contradict each other. Failures here must not abort the data fetch.
+        """
+        try:
+            real_ua = driver.execute_script("return navigator.userAgent") or ""
+        except WebDriverException:
+            _LOGGER.debug("Could not read navigator.userAgent", exc_info=True)
+            real_ua = ""
+
+        match = _CHROME_VERSION_PATTERN.search(real_ua)
+        full_version = match.group(1) if match else _FALLBACK_CHROME_VERSION
+        major = full_version.split(".", 1)[0]
+
+        profile = random.choice(_UA_PROFILES)
+        user_agent = (
+            f"Mozilla/5.0 ({profile['ua_platform']}) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            f"Chrome/{full_version} Safari/537.36"
+        )
+        metadata = {
+            "brands": [
+                {"brand": "Chromium", "version": major},
+                {"brand": "Google Chrome", "version": major},
+                {"brand": "Not.A/Brand", "version": "99"},
+            ],
+            "fullVersionList": [
+                {"brand": "Chromium", "version": full_version},
+                {"brand": "Google Chrome", "version": full_version},
+                {"brand": "Not.A/Brand", "version": "99.0.0.0"},
+            ],
+            "platform": profile["ch_platform"],
+            "platformVersion": profile["ch_platform_version"],
+            "architecture": "x86",
+            "model": "",
+            "mobile": False,
+            "bitness": "64",
+            "wow64": False,
+        }
+        try:
+            driver.execute_cdp_cmd(
+                "Network.setUserAgentOverride",
+                {
+                    "userAgent": user_agent,
+                    "acceptLanguage": "de-DE,de;q=0.9",
+                    "platform": profile["nav_platform"],
+                    "userAgentMetadata": metadata,
+                },
+            )
+            _LOGGER.debug(
+                "Applied stealth user-agent: platform=%s chrome=%s",
+                profile["ch_platform"],
+                full_version,
+            )
+        except (WebDriverException, AttributeError):
+            _LOGGER.warning(
+                "Could not apply stealth user-agent override; using browser default",
+                exc_info=True,
+            )
 
     @staticmethod
     def _detect_chromium_binary() -> str:

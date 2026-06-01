@@ -30,7 +30,7 @@ from .const import (
     MODULE_OPTIONS,
 )
 
-BUILD_ID = "0.3.36"
+BUILD_ID = "0.3.37"
 
 _LOGGER = logging.getLogger(__name__)
 _LOGGER.debug("Loaded Schulmanager config flow build %s", BUILD_ID)

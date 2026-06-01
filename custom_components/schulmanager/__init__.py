@@ -37,7 +37,7 @@ from .coordinator import SchulmanagerCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-INTEGRATION_BUILD = "0.3.36"
+INTEGRATION_BUILD = "0.3.37"
 
 SERVICE_REFRESH = "refresh"
 SERVICE_SCHEMA = vol.Schema({vol.Optional("entry_id"): cv.string})
