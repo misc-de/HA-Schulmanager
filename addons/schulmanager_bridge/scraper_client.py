@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
+import hashlib
 import html as html_utils
 import logging
 import os
@@ -44,6 +45,11 @@ CALENDAR_URL = "https://login.schulmanager-online.de/#/modules/calendar/overview
 SCHEDULE_URL = "https://login.schulmanager-online.de/#/modules/schedules/view//"
 HOMEWORK_MAX_AGE_DAYS = 14
 GERMAN_DATE_PATTERN = re.compile(r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{2,4})")
+
+# Persistent Chromium profiles keep the Schulmanager session (cookies + JWT in
+# localStorage) alive across calls, so the bridge does not re-submit credentials
+# on every fetch. Stored on the add-on's persistent volume (/data) when present.
+PROFILE_SUBDIR = "schulmanager-profiles"
 
 # Realistic desktop browser identities. The Chromium *version* is taken from the
 # real engine at runtime (so it always matches the actual JS feature set); only
@@ -113,7 +119,9 @@ class SchulmanagerClient:
         """Validate credentials and return title information for HA setup."""
         _LOGGER.info("Starting login validation for %s", self._username)
         started = time.perf_counter()
-        driver = self._build_driver()
+        # Credential check only: use a throwaway profile so it never contends
+        # with a running fetch and leaves no persistent state behind.
+        driver = self._build_driver(persistent=False)
         try:
             self._login(driver)
             try:
@@ -175,7 +183,8 @@ class SchulmanagerClient:
         """
         _LOGGER.info("Starting data fetch for %s with modules=%s", self._username, ", ".join(modules))
         started = time.perf_counter()
-        driver = self._build_driver()
+        # Persistent profile keeps the session so most fetches skip the login.
+        driver = self._build_driver(persistent=True)
         try:
             self._login(driver)
             data: dict[str, Any] = {
@@ -222,14 +231,18 @@ class SchulmanagerClient:
         finally:
             self._close_driver(driver)
 
-    def _build_driver(self) -> WebDriver:
-        _LOGGER.debug("Creating local Chromium webdriver")
+    def _build_driver(self, *, persistent: bool = True) -> WebDriver:
+        _LOGGER.debug("Creating local Chromium webdriver (persistent=%s)", persistent)
         chromium_binary = self._detect_chromium_binary()
         chromedriver_binary = self._detect_chromedriver_binary()
 
+        if persistent:
+            user_data_dir = self._persistent_profile_dir()
+        else:
+            user_data_dir = tempfile.mkdtemp(prefix="schulmanager-chrome-")
+
         last_error: WebDriverException | None = None
         for headless_arg in ("--headless=new", "--headless"):
-            user_data_dir = tempfile.mkdtemp(prefix="schulmanager-chrome-")
             log_file = tempfile.NamedTemporaryFile(
                 prefix="schulmanager-chromedriver-",
                 suffix=".log",
@@ -237,6 +250,11 @@ class SchulmanagerClient:
             )
             log_path = log_file.name
             log_file.close()
+
+            if persistent:
+                # A crashed previous run can leave a stale lock that would block
+                # every future start; clear it before launching.
+                self._clear_stale_singleton_locks(user_data_dir)
 
             options = self._build_chrome_options(
                 chromium_binary=chromium_binary,
@@ -253,6 +271,7 @@ class SchulmanagerClient:
                 )
                 driver = webdriver.Chrome(service=service, options=options)
                 setattr(driver, "_schulmanager_user_data_dir", user_data_dir)
+                setattr(driver, "_schulmanager_ephemeral_profile", not persistent)
                 setattr(driver, "_schulmanager_chromedriver_log", log_path)
                 self._apply_stealth_user_agent(driver)
                 _LOGGER.debug("Local Chromium webdriver created successfully")
@@ -266,15 +285,41 @@ class SchulmanagerClient:
                     err,
                     f" chromedriver_log={log_excerpt}" if log_excerpt else "",
                 )
-                shutil.rmtree(user_data_dir, ignore_errors=True)
                 try:
                     os.unlink(log_path)
                 except OSError:
                     pass
 
+        # Keep a persistent profile (it holds the session); only throwaway
+        # profiles are removed on total failure.
+        if not persistent:
+            shutil.rmtree(user_data_dir, ignore_errors=True)
         raise SchulmanagerConnectionError(
             f"Local Chromium WebDriver could not be started: {last_error}"
         ) from last_error
+
+    def _persistent_profile_dir(self) -> str:
+        """Return a stable per-user Chromium profile directory, created if needed."""
+        if os.path.isdir("/data") and os.access("/data", os.W_OK):
+            base = "/data"
+        else:
+            base = tempfile.gettempdir()
+        digest = hashlib.sha256(self._username.strip().lower().encode("utf-8")).hexdigest()[:16]
+        path = os.path.join(base, PROFILE_SUBDIR, digest)
+        os.makedirs(path, exist_ok=True)
+        return path
+
+    @staticmethod
+    def _clear_stale_singleton_locks(user_data_dir: str) -> None:
+        """Remove leftover Chromium singleton locks from a crashed previous run."""
+        for name in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
+            lock = os.path.join(user_data_dir, name)
+            try:
+                os.unlink(lock)
+            except FileNotFoundError:
+                pass
+            except OSError:
+                _LOGGER.debug("Could not remove stale lock %s", lock, exc_info=True)
 
     @staticmethod
     def _build_chrome_options(
@@ -406,9 +451,11 @@ class SchulmanagerClient:
             driver.quit()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Driver quit failed", exc_info=True)
-        user_data_dir = getattr(driver, "_schulmanager_user_data_dir", None)
-        if isinstance(user_data_dir, str):
-            shutil.rmtree(user_data_dir, ignore_errors=True)
+        # Only throwaway profiles are deleted; persistent ones keep the session.
+        if getattr(driver, "_schulmanager_ephemeral_profile", True):
+            user_data_dir = getattr(driver, "_schulmanager_user_data_dir", None)
+            if isinstance(user_data_dir, str):
+                shutil.rmtree(user_data_dir, ignore_errors=True)
         log_path = getattr(driver, "_schulmanager_chromedriver_log", None)
         if isinstance(log_path, str):
             try:

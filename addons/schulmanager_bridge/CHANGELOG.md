@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.38
+- Persistente Browser-Session: Die Bridge meldet sich nicht mehr bei jedem Abruf neu mit Benutzername + Passwort an, sondern hält die Schulmanager-Session (Cookies + Token) in einem dauerhaften Chromium-Profil pro Benutzer. Folge-Abrufe überspringen den Login komplett – deutlich weniger Login-Traffic und geringeres Block-Risiko
+- Login-Validierung nutzt weiterhin ein Wegwerf-Profil (kein dauerhafter State, keine Konflikte mit laufenden Abrufen)
+- Robustheit: Verwaiste Chromium-Profil-Sperren eines abgestürzten Vorlaufs werden vor dem Start bereinigt
+
 ## 0.3.37
 - Server-Blocking umgangen: Die Bridge meldet sich jetzt mit einer realistischen, pro Session rotierenden Browser-Identität an (echter Chrome-User-Agent, passende Sec-CH-UA-Client-Hints und Plattform werden gemeinsam via CDP gesetzt) statt mit einer erkennbaren Bot-Kennung
 - Veraltete APIs ersetzt: `datetime.utcnow()` → zeitzonenbewusst, `FlowResult` → `ConfigFlowResult`
