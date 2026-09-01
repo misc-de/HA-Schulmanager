@@ -41,11 +41,11 @@ class FetchRequest(AuthRequest):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    _LOGGER.info("Starting Schulmanager Bridge 0.3.41 (JSON API mode)")
+    _LOGGER.info("Starting Schulmanager Bridge 0.3.42 (JSON API mode)")
     yield
 
 
-app = FastAPI(title="Schulmanager Bridge", version="0.3.41", lifespan=lifespan)
+app = FastAPI(title="Schulmanager Bridge", version="0.3.42", lifespan=lifespan)
 _START_TIME = time.time()
 
 
@@ -91,7 +91,7 @@ async def log_requests(request: Request, call_next):
 def root() -> dict[str, Any]:
     return {
         "name": "Schulmanager Bridge",
-        "version": "0.3.41",
+        "version": "0.3.42",
         "endpoints": ["/health", "/diagnostics", "/validate", "/fetch"],
         "debug_hint": "POST /fetch with {\"debug\": true} to include a raw API sample per module",
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
@@ -102,7 +102,7 @@ def root() -> dict[str, Any]:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "0.3.41",
+        "version": "0.3.42",
         "uptime_seconds": round(time.time() - _START_TIME, 1),
     }
 
@@ -110,7 +110,7 @@ def health() -> dict[str, Any]:
 @app.get("/diagnostics")
 def diagnostics() -> dict[str, Any]:
     return {
-        "version": "0.3.41",
+        "version": "0.3.42",
         "log_level": LOG_LEVEL,
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
         "backend": "schulmanager-json-api",

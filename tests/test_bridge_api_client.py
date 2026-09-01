@@ -64,7 +64,8 @@ EVENT_LESSON = {
 
 def test_format_regular_lesson_uses_subject_label_teacher_room() -> None:
     entry = _client()._format_lesson(REGULAR_LESSON)
-    assert entry["raw"] == "5. 31 KRb FÖ E 1.04"
+    # raw is the bare cell text; the lesson number belongs to the week line
+    assert entry["raw"] == "31 KRb FÖ E 1.04"
     assert entry["lesson_number"] == "5"
     assert entry["date"] == "2026-09-04"
     assert entry["subject"] == "31 KRb"
@@ -79,7 +80,7 @@ def test_format_event_lesson_reads_text_and_rooms() -> None:
     assert entry["subject"] == "Klassenleiterstunde"
     assert entry["teacher"] == "HOM, HIL"
     assert entry["room"] == "A 1.04"
-    assert entry["raw"] == "1. Klassenleiterstunde HOM, HIL A 1.04"
+    assert entry["raw"] == "Klassenleiterstunde HOM, HIL A 1.04"
 
 
 def test_format_cancelled_lesson_is_marked_and_falls_back_to_original() -> None:
@@ -102,6 +103,15 @@ def test_format_lesson_rejects_entries_without_a_usable_date() -> None:
 
 
 # ── _collect_schedules ────────────────────────────────────────────────────────
+
+def test_week_line_carries_the_number_while_raw_stays_bare() -> None:
+    """The scraper stored the plain cell text in raw and numbered only week[]."""
+    result = _client()._collect_schedules(
+        [EVENT_LESSON], {"monday": date(2026, 8, 31), "today": date(2026, 9, 2)}
+    )
+    assert result["week"]["wednesday"] == ["1. Klassenleiterstunde HOM, HIL A 1.04"]
+    assert result["week_details"]["wednesday"][0]["raw"] == "Klassenleiterstunde HOM, HIL A 1.04"
+
 
 def test_collect_schedules_matches_the_scraper_payload_shape() -> None:
     client = _client()

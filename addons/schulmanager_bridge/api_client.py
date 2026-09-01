@@ -549,7 +549,8 @@ class SchulmanagerClient:
             weekday = entry.pop("_weekday")
             entry["cell_index"] = len(week_details[weekday])
             week_details[weekday].append(entry)
-            week[weekday].append(entry["raw"])
+            number = entry["lesson_number"]
+            week[weekday].append(f"{number}. {entry['raw']}".rstrip() if number else entry["raw"])
 
         today_name = WEEKDAY_NAMES[today.weekday()]
         return {
@@ -617,9 +618,9 @@ class SchulmanagerClient:
         if label and lesson_type != "event":
             subject = f"{subject} ({label})" if subject else label
 
+        # ``raw`` is the bare cell text, matching what the scraper stored; the
+        # lesson number is prefixed only on the week line built by the caller.
         raw = " ".join(part for part in (subject, teachers, room) if part)
-        if number:
-            raw = f"{number}. {raw}".rstrip()
 
         return {
             "_weekday": WEEKDAY_NAMES[lesson_date.weekday()],
