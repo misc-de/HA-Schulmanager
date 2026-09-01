@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.42
+- Formattreue nachgezogen: `week_details[].raw` enthält wieder den reinen Zellentext ohne Stundennummer, genau wie beim Scraper; die Nummer steht weiterhin nur in `week[]`
+
 ## 0.3.41
 - **Umstieg auf die Schulmanager-JSON-API.** Die Bridge liest die Daten nicht mehr aus der gerenderten Webseite, sondern über dieselbe JSON-Schnittstelle, die auch die Weboberfläche nutzt (`/api/get-salt` → `/api/login` → `/api/calls`). Alle Module werden in **einem** gebündelten Request geholt
 - **Abruf dauert jetzt unter einer Sekunde statt rund 25 Sekunden.** Die Anmeldung (PBKDF2, ~4 s) fällt nur noch etwa einmal pro Stunde an, weil das JWT zwischen den Abrufen im Speicher gehalten und erst kurz vor Ablauf erneuert wird
