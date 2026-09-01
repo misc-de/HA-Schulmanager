@@ -10,6 +10,7 @@ import time
 import uuid
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
@@ -41,13 +42,13 @@ class FetchRequest(AuthRequest):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    _LOGGER.info("Starting Schulmanager Bridge 0.3.39")
+    _LOGGER.info("Starting Schulmanager Bridge 0.3.40")
     _LOGGER.info("Chromium available: %s", Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists())
     _LOGGER.info("Chromedriver available: %s", Path("/usr/bin/chromedriver").exists() or Path("/usr/lib/chromium/chromedriver").exists())
     yield
 
 
-app = FastAPI(title="Schulmanager Bridge", version="0.3.39", lifespan=lifespan)
+app = FastAPI(title="Schulmanager Bridge", version="0.3.40", lifespan=lifespan)
 _START_TIME = time.time()
 
 
@@ -56,7 +57,20 @@ async def log_requests(request: Request, call_next):
     if BRIDGE_SHARED_SECRET:
         incoming_secret = request.headers.get("X-Schulmanager-Secret", "")
         if incoming_secret != BRIDGE_SHARED_SECRET:
-            raise HTTPException(status_code=401, detail="Invalid or missing bridge secret.")
+            # Returned, not raised: an HTTPException raised inside middleware
+            # sits outside FastAPI's exception handling and would reach the
+            # caller as a bare 500. The marker header lets the integration tell
+            # a misconfigured secret apart from refused Schulmanager credentials.
+            _LOGGER.warning(
+                "Rejected %s %s: invalid or missing bridge secret",
+                request.method,
+                request.url.path,
+            )
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Invalid or missing bridge secret.", "error": "bridge_secret"},
+                headers={"X-Schulmanager-Error": "bridge_secret"},
+            )
     request_id = uuid.uuid4().hex[:8]
     started = time.perf_counter()
     _LOGGER.info("[%s] %s %s", request_id, request.method, request.url.path)
@@ -80,7 +94,7 @@ async def log_requests(request: Request, call_next):
 def root() -> dict[str, Any]:
     return {
         "name": "Schulmanager Bridge",
-        "version": "0.3.39",
+        "version": "0.3.40",
         "endpoints": ["/health", "/diagnostics", "/validate", "/fetch"],
         "debug_hint": "POST /fetch with {\"debug\": true} to include page diagnostics for schedules/meal/homework/calendar",
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
@@ -91,7 +105,7 @@ def root() -> dict[str, Any]:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "0.3.39",
+        "version": "0.3.40",
         "uptime_seconds": round(time.time() - _START_TIME, 1),
     }
 
@@ -99,7 +113,7 @@ def health() -> dict[str, Any]:
 @app.get("/diagnostics")
 def diagnostics() -> dict[str, Any]:
     return {
-        "version": "0.3.39",
+        "version": "0.3.40",
         "log_level": LOG_LEVEL,
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
         "chromium_found": Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists() or Path("/usr/bin/google-chrome").exists(),

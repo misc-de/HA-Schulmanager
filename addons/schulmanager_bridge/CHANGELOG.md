@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.40
+- **Fix: „Authentication failed" ohne Grund.** Der Login galt nur dann als erfolgreich, wenn das Element `#accountDropdown` erschien. Schulmanager hat die Seite geändert – der Login funktionierte, aber das Element fehlte, und die Bridge meldete fälschlich ungültige Zugangsdaten. Home Assistant hat daraufhin die Abfrage komplett gestoppt und eine Neuanmeldung verlangt, die nichts geändert hätte
+- Der Login wird jetzt am tatsächlichen Ergebnis gemessen: Dashboard-Container **oder** Account-Menü **oder** „Formular weg und weggeleitet". Als abgelehnte Zugangsdaten zählt nur noch eine echte Fehlermeldung des Login-Formulars; alles andere ist ein Verbindungsfehler, nach dem Home Assistant beim nächsten Intervall normal weiterläuft
+- Ein defektes persistentes Profil wird jetzt auch nach einem fehlgeschlagenen Login-Versuch zurückgesetzt (bisher nur, wenn die Seite gar nicht lud)
+- **Fix: Falsches `bridge_secret` ergab HTTP 500 statt 401.** Die `HTTPException` der Middleware lag außerhalb der Fehlerbehandlung von FastAPI. Die Bridge antwortet jetzt mit einem echten 401 samt `X-Schulmanager-Error: bridge_secret`, und die Integration behandelt das als Konfigurationsfehler statt als falsche Schulmanager-Zugangsdaten – ohne Neuanmelde-Dialog
+- Bessere Diagnose: Der Seitenauszug im Log zeigt jetzt den sichtbaren Seitentext statt immer desselben Boilerplates aus dem `<head>` der Angular-App
+
 ## 0.3.39
 - Fix: Persistente Session konnte „Login form could not be loaded" (502) auslösen, wenn das Dashboard nach Kaltstart langsam rendert. Der Login wartet jetzt auf Dashboard **oder** Login-Formular (je nachdem, was zuerst erscheint), statt eine aktive Session nach kurzem Timeout fälschlich zu verwerfen
 - Ein defektes persistentes Profil wird nach fehlgeschlagenem Login automatisch zurückgesetzt, sodass der nächste Abruf sauber neu einloggt

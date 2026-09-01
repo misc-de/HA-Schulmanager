@@ -13,12 +13,20 @@ def _api():
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def _make_response(status: int = 200, json_data: dict | None = None, text: str = "error"):
+def _make_response(
+    status: int = 200,
+    json_data: dict | None = None,
+    text: str = "error",
+    headers: dict | None = None,
+):
     """Return an async-context-manager mock that yields a response with given status."""
     response = AsyncMock()
     response.status = status
     response.json = AsyncMock(return_value=json_data or {})
     response.text = AsyncMock(return_value=text)
+    # A real dict: the client reads response headers synchronously, and an
+    # AsyncMock would silently answer every lookup with a coroutine.
+    response.headers = dict(headers or {})
 
     cm = MagicMock()
     cm.__aenter__ = AsyncMock(return_value=response)
@@ -26,9 +34,14 @@ def _make_response(status: int = 200, json_data: dict | None = None, text: str =
     return cm
 
 
-def _make_session(status: int = 200, json_data: dict | None = None, text: str = "error"):
+def _make_session(
+    status: int = 200,
+    json_data: dict | None = None,
+    text: str = "error",
+    headers: dict | None = None,
+):
     session = MagicMock()
-    session.post = MagicMock(return_value=_make_response(status, json_data, text))
+    session.post = MagicMock(return_value=_make_response(status, json_data, text, headers))
     return session
 
 
@@ -68,6 +81,38 @@ def test_validate_login_raises_auth_error_on_401() -> None:
         session = _make_session(401)
         try:
             await client.validate_login(session)
+            assert False, "Expected SchulmanagerAuthError"
+        except api.SchulmanagerAuthError:
+            pass
+
+    asyncio.run(_run())
+
+
+def test_401_with_bridge_secret_marker_is_a_connection_error() -> None:
+    """A wrong shared secret must not trigger Home Assistant's reauth flow."""
+    async def _run():
+        api = _api()
+        client = api.SchulmanagerClient("user", "pw", "http://bridge:8099", "wrong-secret")
+        session = _make_session(401, headers={"X-Schulmanager-Error": "bridge_secret"})
+        try:
+            await client.fetch_data(session, ["schedules"])
+            assert False, "Expected SchulmanagerConnectionError"
+        except api.SchulmanagerAuthError:
+            assert False, "Secret mismatch must not surface as an auth error"
+        except api.SchulmanagerConnectionError as exc:
+            assert "secret" in str(exc).lower()
+
+    asyncio.run(_run())
+
+
+def test_401_without_marker_is_an_auth_error() -> None:
+    """Schulmanager itself refusing the credentials still asks for a re-login."""
+    async def _run():
+        api = _api()
+        client = api.SchulmanagerClient("user", "pw", "http://bridge:8099", "right-secret")
+        session = _make_session(401)
+        try:
+            await client.fetch_data(session, ["schedules"])
             assert False, "Expected SchulmanagerAuthError"
         except api.SchulmanagerAuthError:
             pass
