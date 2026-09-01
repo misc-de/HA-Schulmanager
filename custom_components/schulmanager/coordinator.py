@@ -85,7 +85,7 @@ class SchulmanagerCoordinator(DataUpdateCoordinator[dict]):
             return data
         except SchulmanagerAuthError as err:
             _LOGGER.warning(
-                "Schulmanager authentication failed for '%s'",
+                "Schulmanager refused the credentials for '%s'; asking for a re-login",
                 self.entry.title or self.entry.entry_id,
             )
             raise ConfigEntryAuthFailed(str(err)) from err

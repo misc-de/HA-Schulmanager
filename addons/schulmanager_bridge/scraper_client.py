@@ -46,6 +46,27 @@ SCHEDULE_URL = "https://login.schulmanager-online.de/#/modules/schedules/view//"
 HOMEWORK_MAX_AGE_DAYS = 14
 GERMAN_DATE_PATTERN = re.compile(r"(?P<day>\d{1,2})\.(?P<month>\d{1,2})\.(?P<year>\d{2,4})")
 
+# Elements that prove a rendered, logged-in Schulmanager UI. The account
+# dropdown has been renamed by Schulmanager before, so a dashboard that
+# rendered without it still counts as a successful login.
+LOGGED_IN_MARKERS: tuple[tuple[str, str], ...] = (
+    (By.TAG_NAME, "widgets-container"),
+    (By.ID, "accountDropdown"),
+)
+# Text the login form shows when the credentials themselves are refused. Only
+# these turn into an auth error; everything else is a loading problem.
+REJECTED_LOGIN_HINTS: tuple[str, ...] = (
+    "benutzername oder passwort",
+    "e-mail-adresse oder passwort",
+    "benutzername/passwort",
+    "anmeldung fehlgeschlagen",
+    "login fehlgeschlagen",
+    "zugangsdaten sind ungültig",
+    "ungültige anmeldedaten",
+    "falsches passwort",
+    "konto wurde gesperrt",
+)
+
 # Persistent Chromium profiles keep the Schulmanager session (cookies + JWT in
 # localStorage) alive across calls, so the bridge does not re-submit credentials
 # on every fetch. Stored on the add-on's persistent volume (/data) when present.
@@ -510,18 +531,76 @@ class SchulmanagerClient:
         driver.find_element(By.ID, "password").send_keys(self._password + Keys.RETURN)
 
         try:
-            WebDriverWait(driver, 20).until(
-                EC.presence_of_element_located((By.ID, "accountDropdown"))
+            state = WebDriverWait(driver, 20).until(
+                lambda current_driver: self._login_state(current_driver) or False
             )
-            _LOGGER.debug("Schulmanager login succeeded")
         except TimeoutException as err:
-            page_excerpt = self._strip_tags(driver.page_source)[:500]
+            # The login neither completed nor was visibly refused. That is a
+            # rendering or blocking problem, not a credential problem — calling
+            # it an auth failure would make Home Assistant stop polling and ask
+            # for a re-login that changes nothing. Drop the profile so the next
+            # run starts from a clean session.
+            setattr(driver, "_schulmanager_reset_profile", True)
             _LOGGER.warning(
-                "Schulmanager login did not reach the account menu in time; current_url=%s excerpt=%s",
+                "Schulmanager login did not settle within 20 s; current_url=%s excerpt=%s",
                 driver.current_url,
-                page_excerpt,
+                self._visible_text(driver)[:500],
             )
-            raise SchulmanagerAuthError("Authentication failed.") from err
+            raise SchulmanagerConnectionError(
+                f"Login did not complete (url={driver.current_url}). Neither a "
+                "logged-in page nor a rejection message appeared — likely a "
+                "server block, captcha, or a changed page layout."
+            ) from err
+
+        if state == "rejected":
+            setattr(driver, "_schulmanager_reset_profile", True)
+            _LOGGER.warning(
+                "Schulmanager refused the credentials for %s; current_url=%s",
+                self._username,
+                driver.current_url,
+            )
+            raise SchulmanagerAuthError("Schulmanager refused the credentials.")
+
+        _LOGGER.debug("Schulmanager login succeeded")
+
+    def _login_state(self, driver: WebDriver) -> str:
+        """Classify the page after credentials were submitted.
+
+        Returns ``"success"``, ``"rejected"``, or ``""`` while undecided.
+        """
+        for locator in LOGGED_IN_MARKERS:
+            if driver.find_elements(*locator):
+                return "success"
+
+        on_login_form = bool(driver.find_elements(By.ID, "password"))
+        if not on_login_form and "#/login" not in driver.current_url:
+            # The form is gone and we were routed away, so the login went
+            # through even if every known marker element has been renamed.
+            return "success"
+
+        if on_login_form and any(
+            hint in self._visible_text(driver).lower() for hint in REJECTED_LOGIN_HINTS
+        ):
+            return "rejected"
+        return ""
+
+    @staticmethod
+    def _visible_text(driver: WebDriver, limit: int = 2000) -> str:
+        """Return the text a user would actually see on the page.
+
+        ``page_source`` begins with the SPA's inline bootstrap script, so
+        stripping tags off it yields the same boilerplate on every page and
+        says nothing about what actually rendered.
+        """
+        try:
+            text = driver.execute_script(
+                "return document.body ? document.body.innerText : '';"
+            )
+        except WebDriverException:
+            return ""
+        if not isinstance(text, str):
+            return ""
+        return re.sub(r"\s+", " ", text).strip()[:limit]
 
     def _describe_login_failure(self, driver: WebDriver) -> str:
         """Build a diagnostic message when neither dashboard nor login form loads."""
@@ -533,10 +612,7 @@ class SchulmanagerClient:
             title = driver.title
         except WebDriverException:
             title = "<unknown>"
-        try:
-            excerpt = self._strip_tags(driver.page_source)[:300]
-        except WebDriverException:
-            excerpt = ""
+        excerpt = self._visible_text(driver)[:300]
         _LOGGER.warning(
             "Login page showed neither dashboard nor login form; url=%s title=%r excerpt=%s",
             url,

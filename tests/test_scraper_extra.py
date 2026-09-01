@@ -336,3 +336,82 @@ def test_module_error_result_generic_module() -> None:
     assert result["items"] == []
     assert result["today"] == []
     assert "error" in result
+
+
+# ── _login_state / _visible_text ──────────────────────────────────────────────
+
+class _LoginPage:
+    """Minimal driver stand-in for the post-submit login classification."""
+
+    def __init__(self, *, url: str, elements: set[str] = frozenset(), text: str = "") -> None:
+        self.current_url = url
+        self._elements = set(elements)
+        self._text = text
+
+    def find_elements(self, _by: str, value: str) -> list[object]:
+        return [object()] if value in self._elements else []
+
+    def execute_script(self, _script: str) -> str:
+        return self._text
+
+
+def test_login_state_success_on_dashboard_container() -> None:
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+    page = _LoginPage(url="…/#/dashboard", elements={"widgets-container"})
+    assert client._login_state(page) == "success"
+
+
+def test_login_state_success_on_account_dropdown() -> None:
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+    page = _LoginPage(url="…/#/dashboard", elements={"accountDropdown"})
+    assert client._login_state(page) == "success"
+
+
+def test_login_state_success_when_routed_away_without_any_known_marker() -> None:
+    """The real 2026-09-01 failure: on the dashboard, but no marker element.
+
+    Schulmanager renamed the elements the bridge waited for. The form is gone
+    and the router left /#/login, so the login did succeed.
+    """
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+    page = _LoginPage(url="https://login.schulmanager-online.de/#/dashboard")
+    assert client._login_state(page) == "success"
+
+
+def test_login_state_rejected_only_with_an_error_message() -> None:
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+    page = _LoginPage(
+        url="https://login.schulmanager-online.de/#/login",
+        elements={"password"},
+        text="Anmeldung fehlgeschlagen: Benutzername oder Passwort ist falsch.",
+    )
+    assert client._login_state(page) == "rejected"
+
+
+def test_login_state_undecided_while_form_is_still_up_without_error() -> None:
+    """No verdict yet → the caller keeps waiting instead of crying auth failure."""
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+    page = _LoginPage(
+        url="https://login.schulmanager-online.de/#/login",
+        elements={"password"},
+        text="Anmelden",
+    )
+    assert client._login_state(page) == ""
+
+
+def test_visible_text_collapses_whitespace_and_survives_driver_errors() -> None:
+    module = load_scraper_module()
+    client = module.SchulmanagerClient("user", "pw")
+    page = _LoginPage(url="…", text="  Stundenplan \n\n  Hausaufgaben ")
+    assert client._visible_text(page) == "Stundenplan Hausaufgaben"
+
+    class BrokenDriver:
+        def execute_script(self, _script: str):
+            raise module.WebDriverException("session lost")
+
+    assert client._visible_text(BrokenDriver()) == ""

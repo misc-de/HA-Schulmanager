@@ -89,8 +89,20 @@ class SchulmanagerClient:
             headers = {"X-Schulmanager-Secret": self._bridge_secret} if self._bridge_secret else None
             async with session.post(url, json=payload, headers=headers, timeout=180) as response:
                 if response.status == 401:
-                    _LOGGER.warning("Bridge rejected Schulmanager credentials for %s", url)
-                    raise SchulmanagerAuthError("Authentication failed.")
+                    # The bridge answers 401 for two unrelated causes. Only one
+                    # of them is fixable by re-entering Schulmanager credentials,
+                    # so a wrong shared secret must not start a reauth flow.
+                    if response.headers.get("X-Schulmanager-Error") == "bridge_secret":
+                        _LOGGER.error(
+                            "Bridge at %s rejected the shared secret; check the "
+                            "add-on's bridge_secret option against the integration",
+                            url,
+                        )
+                        raise SchulmanagerConnectionError(
+                            "Bridge rejected the shared secret. Check the add-on configuration."
+                        )
+                    _LOGGER.warning("Schulmanager refused the stored credentials (bridge %s)", url)
+                    raise SchulmanagerAuthError("Schulmanager refused the credentials.")
                 if response.status >= 400:
                     detail = await response.text()
                     _LOGGER.error(
