@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any, AsyncIterator
 
 import logging
@@ -14,7 +13,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 import uvicorn
 
-from scraper_client import (
+from api_client import (
     LoginInfo,
     SchulmanagerAuthError,
     SchulmanagerClient,
@@ -42,13 +41,11 @@ class FetchRequest(AuthRequest):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    _LOGGER.info("Starting Schulmanager Bridge 0.3.40")
-    _LOGGER.info("Chromium available: %s", Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists())
-    _LOGGER.info("Chromedriver available: %s", Path("/usr/bin/chromedriver").exists() or Path("/usr/lib/chromium/chromedriver").exists())
+    _LOGGER.info("Starting Schulmanager Bridge 0.3.41 (JSON API mode)")
     yield
 
 
-app = FastAPI(title="Schulmanager Bridge", version="0.3.40", lifespan=lifespan)
+app = FastAPI(title="Schulmanager Bridge", version="0.3.41", lifespan=lifespan)
 _START_TIME = time.time()
 
 
@@ -94,9 +91,9 @@ async def log_requests(request: Request, call_next):
 def root() -> dict[str, Any]:
     return {
         "name": "Schulmanager Bridge",
-        "version": "0.3.40",
+        "version": "0.3.41",
         "endpoints": ["/health", "/diagnostics", "/validate", "/fetch"],
-        "debug_hint": "POST /fetch with {\"debug\": true} to include page diagnostics for schedules/meal/homework/calendar",
+        "debug_hint": "POST /fetch with {\"debug\": true} to include a raw API sample per module",
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
     }
 
@@ -105,7 +102,7 @@ def root() -> dict[str, Any]:
 def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "0.3.40",
+        "version": "0.3.41",
         "uptime_seconds": round(time.time() - _START_TIME, 1),
     }
 
@@ -113,11 +110,10 @@ def health() -> dict[str, Any]:
 @app.get("/diagnostics")
 def diagnostics() -> dict[str, Any]:
     return {
-        "version": "0.3.40",
+        "version": "0.3.41",
         "log_level": LOG_LEVEL,
         "secret_enabled": bool(BRIDGE_SHARED_SECRET),
-        "chromium_found": Path("/usr/bin/chromium").exists() or Path("/usr/bin/chromium-browser").exists() or Path("/usr/bin/google-chrome").exists(),
-        "chromedriver_found": Path("/usr/bin/chromedriver").exists() or Path("/usr/lib/chromium/chromedriver").exists(),
+        "backend": "schulmanager-json-api",
     }
 
 

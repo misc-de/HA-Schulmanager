@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.3.41
+- **Umstieg auf die Schulmanager-JSON-API.** Die Bridge liest die Daten nicht mehr aus der gerenderten Webseite, sondern über dieselbe JSON-Schnittstelle, die auch die Weboberfläche nutzt (`/api/get-salt` → `/api/login` → `/api/calls`). Alle Module werden in **einem** gebündelten Request geholt
+- **Abruf dauert jetzt unter einer Sekunde statt rund 25 Sekunden.** Die Anmeldung (PBKDF2, ~4 s) fällt nur noch etwa einmal pro Stunde an, weil das JWT zwischen den Abrufen im Speicher gehalten und erst kurz vor Ablauf erneuert wird
+- **Chromium und Selenium entfallen komplett** – das Add-on-Image enthält keinen Browser mehr, es gibt keine Browser-Profile, keine Profil-Sperren und keine Selektor-Abhängigkeit. Genau der Fehler aus 0.3.40 („Schulmanager hat ein Element umbenannt") kann so nicht mehr auftreten
+- Fehler sind jetzt eindeutig: ein abgelehnter Login liefert HTTP 401, ein einzelnes fehlerhaftes Modul nur einen Eintrag in `meta.module_errors`, während die übrigen Module normal weiterlaufen
+- Der Kontoname wird wieder korrekt gefüllt (kam aus dem Login-Ergebnis statt aus der geparsten Kontoseite) – behebt den `IndexError` des alten Parsers
+- Das Datenformat ist unverändert: Sensoren, Binärsensoren und die Stundenplan-Karte brauchen keine Anpassung
+- `scraper_client.py` bleibt vorerst im Repository (nicht mehr im Image), damit ein Rückzug auf das Scraping möglich bleibt
+- Bekannte Einschränkung: Der Speiseplan (`meal`) hat noch keine API-Zuordnung und liefert eine leere Liste mit Hinweis in `meta.module_errors`
+
 ## 0.3.40
 - **Fix: „Authentication failed" ohne Grund.** Der Login galt nur dann als erfolgreich, wenn das Element `#accountDropdown` erschien. Schulmanager hat die Seite geändert – der Login funktionierte, aber das Element fehlte, und die Bridge meldete fälschlich ungültige Zugangsdaten. Home Assistant hat daraufhin die Abfrage komplett gestoppt und eine Neuanmeldung verlangt, die nichts geändert hätte
 - Der Login wird jetzt am tatsächlichen Ergebnis gemessen: Dashboard-Container **oder** Account-Menü **oder** „Formular weg und weggeleitet". Als abgelehnte Zugangsdaten zählt nur noch eine echte Fehlermeldung des Login-Formulars; alles andere ist ein Verbindungsfehler, nach dem Home Assistant beim nächsten Intervall normal weiterläuft
