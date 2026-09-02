@@ -115,4 +115,8 @@ You can also test the bridge directly:
 
 - Do not expose port `8099` to the public internet.
 - Keep the bridge inside your local network.
-- The bridge uses browser automation and may need parser updates if the Schulmanager layout changes.
+- The bridge reads the Schulmanager JSON API, so changes to the website layout
+  do not affect it. The API itself is undocumented and may change, but such a
+  change shows up as an explicit HTTP error rather than as empty sensors.
+- If you test the endpoints above while a shared secret is configured, send it
+  along: `curl -H "X-Schulmanager-Secret: YOUR_SECRET" http://YOUR_HA_IP:8099/health`
