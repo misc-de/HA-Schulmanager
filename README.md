@@ -15,8 +15,12 @@ Das Projekt besteht aus mehreren Home-Assistant-Bausteinen:
   die Daten abruft
 - optionalen **Lovelace Dashboard-Cards** für Stundenplan und Hausaufgaben
 
-Die Bridge ist erforderlich, weil der Zugriff auf Schulmanager Online auf
-Browser-Automatisierung basiert.
+Die Bridge holt die Daten seit Version 0.3.41 über dieselbe JSON-Schnittstelle,
+die auch die Weboberfläche von Schulmanager Online nutzt. Ein Browser wird dafür
+nicht mehr gestartet: Ein Abruf dauert Bruchteile einer Sekunde statt rund 25
+Sekunden, und Layout-Änderungen an der Website können ihn nicht mehr brechen.
+Als eigenes Add-on läuft sie weiterhin, damit die Anmeldung und das
+Zwischenspeichern der Sitzung außerhalb des Home-Assistant-Prozesses liegen.
 
 ## Was wird wodurch installiert?
 
@@ -66,21 +70,45 @@ deiner Schule.
 
 | Modul in Schulmanager Online | Status | Unterstützung | Hinweis |
 | --- | --- | --- | --- |
-| Konto | stabil | `██████████` 100 % | Name, Klasse und Basisdaten |
-| Stundenplan | gut nutzbar | `████████░░` 80 % | Heute, Woche, Ausfall und Raumänderungen |
-| Hausaufgaben | gut nutzbar | `████████░░` 80 % | Datumsgruppen, Fächer und Einträge |
-| Speiseplan | teilweise | `██████░░░░` 60 % | Tagesansicht als Sensor |
-| Kalender | teilweise | `█████░░░░░` 50 % | einfache Termine |
-| Klausuren | teilweise | `████░░░░░░` 40 % | abhängig vom Schulmanager-Online-Layout |
-| AGs / Veranstaltungen | experimentell | `███░░░░░░░` 30 % | einfache Einträge |
+| Konto | stabil | `██████████` 100 % | Name und zugeordnete Schüler, kommen direkt aus der Anmeldung |
+| Stundenplan | stabil | `█████████░` 90 % | Heute und Woche mit Fach, Lehrer und Raum; Entfall und Vertretung werden gekennzeichnet |
+| Kalender | gut nutzbar | `████████░░` 80 % | Termine mit Datum, Uhrzeit und Titel |
+| Hausaufgaben | gut nutzbar | `███████░░░` 70 % | Datumsgruppen und Fächer; die Feldzuordnung ist noch nicht gegen echte Einträge geprüft |
+| Klausuren | gut nutzbar | `███████░░░` 70 % | Datum, Zeitraum und Fach; ebenfalls noch nicht gegen echte Einträge geprüft |
+| AGs / Veranstaltungen | experimentell | `████░░░░░░` 40 % | über die Wahlkurse des Schülers; noch nicht gegen echte Einträge geprüft |
+| Speiseplan | derzeit ohne Daten | `░░░░░░░░░░` 0 % | seit 0.3.41 ohne Zuordnung zur Schnittstelle – siehe Hinweis unten |
+| Elternbriefe / Dokumente | nicht unterstützt | `░░░░░░░░░░` 0 % | Schnittstelle ist vorhanden, aber noch nicht angebunden |
 | Nachrichten / Mitteilungen | nicht unterstützt | `░░░░░░░░░░` 0 % | noch nicht implementiert |
 | Krankmeldungen / Abwesenheiten | nicht unterstützt | `░░░░░░░░░░` 0 % | noch nicht implementiert |
-| Elternbriefe / Dokumente | nicht unterstützt | `░░░░░░░░░░` 0 % | noch nicht implementiert |
+
+> **Speiseplan:** Mit dem Wechsel auf die JSON-Schnittstelle in Version 0.3.41
+> ist der Speiseplan vorübergehend entfallen – für dieses Modul ist noch keine
+> passende Schnittstelle gefunden. Der Sensor existiert weiterhin, bleibt aber
+> leer und meldet den Grund über `meta.module_errors`. Alle übrigen Module
+> liefern Daten wie zuvor.
+
+Module, die eine Schule nicht freigeschaltet hat, liefern ebenfalls leere
+Listen – das ist kein Fehler der Integration.
+
+## Wie die Daten geholt werden
+
+1. Die Integration ruft die Bridge über HTTP auf (Standard: Port `8099`).
+2. Die Bridge meldet sich bei Schulmanager Online an und erhält ein Token, das
+   sie rund eine Stunde lang weiterverwendet. Die Anmeldung selbst ist
+   rechenintensiv und fällt deshalb nur selten an.
+3. Alle ausgewählten Module werden in **einer** gebündelten Anfrage geholt.
+4. Die Bridge gibt normalisiertes JSON zurück, die Integration aktualisiert die
+   Sensoren.
+
+Ein einzelnes fehlerhaftes Modul beendet den Abruf nicht: Es wird in
+`meta.module_errors` vermerkt, während die übrigen Module normal weiterlaufen.
 
 ## Repository-Struktur
 
 - `custom_components/schulmanager` - Home-Assistant Custom Integration
 - `addons/schulmanager_bridge` - lokales Home-Assistant Add-on
+  (`api_client.py` spricht mit der JSON-Schnittstelle, `bridge_server.py`
+  stellt sie Home Assistant zur Verfügung)
 - `docs/markdown-examples` - Dashboard-Beispiele und Card-Konfigurationen
 
 ## Installation
@@ -115,8 +143,11 @@ Danach **Schulmanager Online Bridge** aus dem Add-on Store installieren.
 Die Integration lädt die Dashboard-Cards automatisch als Frontend-Modul:
 
 ```text
-/schulmanager_static/schulmanager-timetable-card.js?v=0.3.27
+/schulmanager_static/schulmanager-timetable-card.js?v=<installierte Version>
 ```
+
+Die Versionsangabe hängt die Integration selbst an, damit der Browser nach einem
+Update nicht die alte Datei aus dem Cache nimmt.
 
 Nach einem Update ist ein Home-Assistant-Neustart und ein harter Browser-Reload
 oft nötig. Falls die Cards trotzdem nicht gefunden werden, kann dieselbe URL
@@ -224,7 +255,7 @@ Für Wochenstundenplan und Hausaufgaben gibt es eigene Lovelace-Cards. Die
 Integration lädt die Frontend-Ressource normalerweise automatisch:
 
 ```text
-/schulmanager_static/schulmanager-timetable-card.js?v=0.3.27
+/schulmanager_static/schulmanager-timetable-card.js?v=<installierte Version>
 ```
 
 Falls Home Assistant die Cards nicht automatisch lädt, kann diese URL manuell
@@ -262,25 +293,36 @@ Verfügbare Beispiele:
 
 ## Tests
 
-Parser-Unit-Tests ausführen:
-
 ```bash
 python -m pytest tests
 ```
 
+Die Suite läuft vollständig offline: `tests/conftest.py` stellt Stubs für
+`aiohttp` und `homeassistant` bereit, sodass für die Tests keine
+Produktivabhängigkeiten installiert sein müssen. Das Mapping der JSON-API wird
+gegen echte, aufgezeichnete API-Antworten geprüft.
+
 ## Hinweise
 
-- Die Bridge nutzt Browser-Automatisierung und kann Parser-Anpassungen
-  benötigen, wenn Schulmanager Online das Layout ändert.
-- Schulen können leicht unterschiedliche Seitenstrukturen verwenden.
+- Die Bridge liest keine HTML-Seiten mehr, sondern die JSON-Schnittstelle.
+  Änderungen am Seitenlayout von Schulmanager Online wirken sich damit nicht
+  mehr auf die Datenabfrage aus.
+- Die Schnittstelle ist nicht offiziell dokumentiert. Sie kann sich ändern —
+  Fehler zeigen sich dann aber als eindeutiger HTTP-Status statt als still
+  leerlaufende Sensoren.
+- Welche Module eine Schule freigeschaltet hat, ist von Schule zu Schule
+  verschieden. Nicht freigegebene Module liefern leere Listen.
 - Wenn Daten vorübergehend leer sind, behält die Integration nach Möglichkeit
   die letzten erfolgreich geladenen Daten bei.
 
 ## Upstream-Referenz
 
-Dieses Projekt basiert auf dem öffentlichen Schulmanager-Online-Scraping-Ansatz aus:
+Dieses Projekt ging ursprünglich vom öffentlichen Schulmanager-Online-Scraping-Ansatz aus:
 
 - https://github.com/SchmueI/Schulmanager-API
+
+Seit Version 0.3.41 wird nicht mehr gescrapt, sondern die JSON-Schnittstelle
+verwendet. Der Lizenzbezug bleibt davon unberührt.
 
 Das Upstream-Projekt ist unter GPL-3.0 lizenziert. Der GPL-3.0-Lizenztext liegt
 in diesem Repository unter `LICENSE.md`.
