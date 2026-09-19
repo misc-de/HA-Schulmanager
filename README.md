@@ -3,10 +3,12 @@
 Eine benutzerdefinierte Home-Assistant-Integration für **Schulmanager Online**
 mit lokalem Bridge-Add-on.
 
-⚠️ **KI-unterstütztes Projekt**  
-
+---
+⚠️ **AI-assisted project**  
 Dieses Projekt wird aktiv weiterentwickelt. Funktionen können sich ändern und
 Instabilitäten sind möglich.
+
+---
 
 Das Projekt besteht aus mehreren Home-Assistant-Bausteinen:
 
