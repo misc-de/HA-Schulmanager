@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.43
+- Abhängigkeiten der Bridge aktualisiert: `fastapi` 0.115.6 → 0.141.1 und `uvicorn[standard]` 0.32.1 → 0.54.0. Die Bridge ist im Netz erreichbar und soll deshalb Sicherheits- und Fehlerkorrekturen der Frameworks mitbekommen
+- Keine Änderung am Verhalten oder am Datenformat; Home Assistant baut das Add-on-Image beim Update neu
+
 ## 0.3.42
 - Formattreue nachgezogen: `week_details[].raw` enthält wieder den reinen Zellentext ohne Stundennummer, genau wie beim Scraper; die Nummer steht weiterhin nur in `week[]`
 
