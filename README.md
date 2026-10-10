@@ -317,6 +317,28 @@ gegen echte, aufgezeichnete API-Antworten geprüft.
 - Wenn Daten vorübergehend leer sind, behält die Integration nach Möglichkeit
   die letzten erfolgreich geladenen Daten bei.
 
+## Rechtlicher Hinweis
+
+Dieses Projekt ist ein inoffizielles Community-Projekt und steht in keiner
+Verbindung zur Schulmanager Online GmbH. Es nutzt die nicht offiziell
+dokumentierte JSON-Schnittstelle von
+[Schulmanager Online](https://www.schulmanager-online.de), die auch die
+Weboberfläche verwendet.
+
+## Credits
+
+Dieses Projekt baut auf folgenden Projekten auf:
+
+| Projekt | Verwendet für | Lizenz |
+|---|---|---|
+| [Home Assistant](https://www.home-assistant.io) | Plattform der Integration | Apache-2.0 |
+| [HACS](https://hacs.xyz) | Installation und Updates der Integration | MIT |
+| [aiohttp](https://github.com/aio-libs/aiohttp) | HTTP-Aufrufe der Integration an die Bridge | Apache-2.0 |
+| [voluptuous](https://github.com/alecthomas/voluptuous) | Eingabeprüfung im Konfigurationsdialog | BSD-3-Clause |
+| [FastAPI](https://fastapi.tiangolo.com) | HTTP-API der Bridge | MIT |
+| [Uvicorn](https://www.uvicorn.org) | ASGI-Server der Bridge | BSD-3-Clause |
+| [Pydantic](https://docs.pydantic.dev) | Datenmodelle der Bridge-API | MIT |
+
 ## Upstream-Referenz
 
 Dieses Projekt ging ursprünglich vom öffentlichen Schulmanager-Online-Scraping-Ansatz aus:
