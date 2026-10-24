@@ -277,7 +277,14 @@ Hausaufgaben-Card:
 type: custom:schulmanager-homework-card
 entity: sensor.YOUR_SCHULMANAGER_HOMEWORK_ENTITY
 title: Hausaufgaben
+days: 14
 ```
+
+`days` legt den Zeitraum fest, mit dem die Karte startet: `7` (letzte Woche),
+`14` (letzte zwei Wochen) oder `0` (alle Einträge, Standard ohne Angabe).
+Künftige Einträge bleiben immer sichtbar. In der Karte selbst lässt sich der
+Zeitraum jederzeit über die Schalter „1 Woche“, „2 Wochen“ und „Alle“ wechseln;
+diese Auswahl gilt nur bis zum Neuladen der Seite.
 
 Beim Hinzufügen über den visuellen Editor bieten die Cards eine Entitätsauswahl
 und bevorzugen passende Schulmanager-Online-Sensoren. Die Integration stellt die

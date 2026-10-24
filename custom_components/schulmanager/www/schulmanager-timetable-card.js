@@ -53,6 +53,30 @@ const isHomeworkEntity = (stateObj) => {
   );
 };
 
+// Zeiträume der Hausaufgaben-Karte; 0 = alle Einträge des Sensors.
+const HOMEWORK_RANGES = [
+  [7, "1 Woche"],
+  [14, "2 Wochen"],
+  [0, "Alle"],
+];
+
+const normalizeRange = (value) => {
+  const days = Number(value);
+  return HOMEWORK_RANGES.some(([option]) => option === days) ? days : 0;
+};
+
+const toIsoDate = (date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+
+// Behält Einträge ab heute minus `days` Tagen; künftige Einträge bleiben immer sichtbar.
+const filterByRange = (items, days) => {
+  if (!days) return items;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - days);
+  const cutoffIso = toIsoDate(cutoff);
+  return items.filter((item) => String(item?.date || "") >= cutoffIso);
+};
+
 const minutesToTime = (minutes) => {
   const hours = Math.floor(minutes / 60);
   const mins = minutes % 60;
@@ -737,11 +761,12 @@ class SchulmanagerHomeworkCard extends HTMLElement {
     const entity = Object.entries(hass?.states || {}).find(([, stateObj]) =>
       isHomeworkEntity(stateObj)
     )?.[0];
-    return { entity: entity || "", title: "Hausaufgaben" };
+    return { entity: entity || "", title: "Hausaufgaben", days: 14 };
   }
 
   setConfig(config) {
     this._config = { title: "Hausaufgaben", ...config };
+    this._range = normalizeRange(this._config.days);
     this._render();
   }
 
@@ -768,8 +793,28 @@ class SchulmanagerHomeworkCard extends HTMLElement {
     `;
   }
 
+  _attachShadow() {
+    if (this.shadowRoot) return;
+    this.attachShadow({ mode: "open" });
+    // Delegiert, weil _render() den Inhalt bei jedem hass-Update neu schreibt.
+    this.shadowRoot.addEventListener("click", (ev) => {
+      const button = ev.target.closest?.("[data-range]");
+      if (!button) return;
+      this._range = normalizeRange(button.dataset.range);
+      this._render();
+    });
+  }
+
+  _renderRangeSelector() {
+    const buttons = HOMEWORK_RANGES.map(([days, label]) => {
+      const active = days === this._range;
+      return `<button type="button" class="range-option${active ? " active" : ""}" data-range="${days}" aria-pressed="${active}">${label}</button>`;
+    }).join("");
+    return `<div class="range-selector" role="group" aria-label="Zeitraum">${buttons}</div>`;
+  }
+
   _render() {
-    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    this._attachShadow();
     if (!this._config || !this._hass) return;
 
     const entityId = this._config.entity;
@@ -786,17 +831,21 @@ class SchulmanagerHomeworkCard extends HTMLElement {
       return;
     }
 
-    const items = Array.isArray(stateObj.attributes?.items) ? stateObj.attributes.items : [];
-    const titleRow = renderTitleRow(title, stateObj);
+    const allItems = Array.isArray(stateObj.attributes?.items) ? stateObj.attributes.items : [];
+    const items = filterByRange(allItems, this._range);
+    const header = `${renderTitleRow(title, stateObj)}${this._renderRangeSelector()}`;
     if (!items.length) {
-      this.shadowRoot.innerHTML = `${this._styles()}<ha-card>${titleRow}<div class="empty">Keine Hausaufgaben vorhanden.</div></ha-card>`;
+      const message = allItems.length
+        ? `Keine Hausaufgaben in den letzten ${this._range} Tagen.`
+        : "Keine Hausaufgaben vorhanden.";
+      this.shadowRoot.innerHTML = `${this._styles()}<ha-card>${header}<div class="empty">${message}</div></ha-card>`;
       return;
     }
 
     this.shadowRoot.innerHTML = `
       ${this._styles()}
       <ha-card>
-        ${titleRow}
+        ${header}
         <div class="homework-timeline">
           ${items.map((item) => this._renderDay(item)).join("")}
         </div>
@@ -865,6 +914,31 @@ class SchulmanagerHomeworkCard extends HTMLElement {
           opacity: 0.72;
           text-align: right;
           white-space: nowrap;
+        }
+
+        .range-selector {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin: -6px 0 14px;
+        }
+
+        .range-option {
+          padding: 4px 12px;
+          border: 1px solid rgba(var(--rgb-primary-text-color), 0.16);
+          border-radius: 16px;
+          background: transparent;
+          color: var(--secondary-text-color);
+          font: inherit;
+          font-size: 13px;
+          line-height: 1.4;
+          cursor: pointer;
+        }
+
+        .range-option.active {
+          border-color: var(--primary-color);
+          background: var(--primary-color);
+          color: var(--text-primary-color, #fff);
         }
 
         .homework-timeline {
@@ -1062,6 +1136,34 @@ class SchulmanagerTimetableCardEditor extends SchulmanagerEntityCardEditor {
 class SchulmanagerHomeworkCardEditor extends SchulmanagerEntityCardEditor {
   constructor() {
     super(isSchulmanagerSensor, "Hausaufgaben", "Hausaufgaben-Entität");
+  }
+
+  _render() {
+    super._render();
+    const form = this.shadowRoot?.querySelector(".form");
+    if (!form) return;
+
+    const range = document.createElement("ha-selector");
+    range.hass = this._hass;
+    range.label = "Zeitraum";
+    range.selector = {
+      select: {
+        mode: "dropdown",
+        options: HOMEWORK_RANGES.map(([days, label]) => ({ value: String(days), label })),
+      },
+    };
+    range.value = String(normalizeRange(this._config.days));
+    range.addEventListener("value-changed", (ev) => {
+      this._config = { ...this._config, days: normalizeRange(ev.detail?.value) };
+      this.dispatchEvent(
+        new CustomEvent("config-changed", {
+          detail: { config: this._config },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    });
+    form.appendChild(range);
   }
 }
 
