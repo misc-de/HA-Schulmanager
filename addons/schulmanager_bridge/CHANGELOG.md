@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.44
+- **Hausaufgaben-Karte: Zeitraum wählbar.** Unter dem Titel gibt es die Schalter „1 Woche“, „2 Wochen“ und „Alle“; ein Klick filtert sofort. Künftige Einträge bleiben immer sichtbar
+- Der Startzeitraum lässt sich im Karten-Editor (Dropdown „Zeitraum“) oder per YAML mit `days: 7`, `14` oder `0` festlegen. Bestehende Karten ohne `days` zeigen weiterhin alle Einträge, neu angelegte Karten starten mit 2 Wochen
+- Bridge und Sensoren sind unverändert; es ändert sich nur die Dashboard-Karte
+
 ## 0.3.43
 - Abhängigkeiten der Bridge aktualisiert: `fastapi` 0.115.6 → 0.141.1 und `uvicorn[standard]` 0.32.1 → 0.54.0. Die Bridge ist im Netz erreichbar und soll deshalb Sicherheits- und Fehlerkorrekturen der Frameworks mitbekommen
 - Keine Änderung am Verhalten oder am Datenformat; Home Assistant baut das Add-on-Image beim Update neu
